@@ -13,28 +13,28 @@ if(CMAKE_COMPILER_IS_GNUCXX)
 endif()
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wno-deprecated-declarations -Wno-unused-variable")
 
-list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/CMakeModules/)
+#list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/CMakeModules/)
 
-IF(CMAKE_COMPILER_IS_GNUCXX)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fno-omit-frame-pointer -O0 -g")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -fno-omit-frame-pointer -O0 -g")
-endif()
+#IF(CMAKE_COMPILER_IS_GNUCXX)
+#    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fno-omit-frame-pointer -O0 -g")
+#    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -fno-omit-frame-pointer -O0 -g")
+#endif()
 
 ## Eigen
 # find_package(Eigen REQUIRED)
 # include_directories(${EIGEN_INCLUDE_DIRS})
 # message("===> Eigen Include DIR: ${EIGEN_INCLUDE_DIRS}")
 
-## Boost
-# find_package(Boost REQUIRED COMPONENTS filesystem)
-# include_directories(${Boost_INCLUDE_DIRS})
-# if(Boost_FOUND)
-#     message("===> Boost Information: Version: ${Boost_VERSION}" )
-#     message("===> Boost Information: Include Dir: ${Boost_INCLUDE_DIRS}" )
-#     message("===> Boost Information: Libs Dir: ${Boost_LIBRARIES}" )
-# else()
-#     message("===> Boost Not Found!!!" )
-# endif()
+# Boost
+find_package(Boost REQUIRED COMPONENTS filesystem)
+include_directories(${Boost_INCLUDE_DIRS})
+if(Boost_FOUND)
+ message("===> Boost Information: Version: ${Boost_VERSION}" )
+ message("===> Boost Information: Include Dir: ${Boost_INCLUDE_DIRS}" )
+ message("===> Boost Information: Libs Dir: ${Boost_LIBRARIES}" )
+else()
+ message("===> Boost Not Found!!!" )
+endif()
 
 ## OpenCV
 set(OpenCV_DIR /home/vance/opt/opencv-3.4.1/build)
@@ -78,29 +78,33 @@ endif()
 #     message("===> G2O Not Found!!!" )
 # endif()
 
-
 include_directories(
     ${PROJECT_SOURCE_DIR}
     ${PROJECT_SOURCE_DIR}/include/MotionShot
-    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/BGDifference
+    ${PROJECT_SOURCE_DIR}/src/BackgroundExtractor
+    ${PROJECT_SOURCE_DIR}/src/FramesDifference
+    ${PROJECT_SOURCE_DIR}/src/ViBe
+    ${PROJECT_SOURCE_DIR}/src/ViBe+
 )
 
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/lib)
-FILE(GLOB_RECURSE IncFiles "include/MotionShot/*.h")
-aux_source_directory(src/. DIR_SRCS)
-add_library(MotionShot
-    ${DIR_SRCS}
-    ${IncFiles}
-)
+set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
+set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 
-target_link_libraries(MotionShot
-    ${LINK_LIBS}
+add_library(${PROJECT_NAME} SHARED
+    src/utility.cpp
+    src/MotionTracker.cpp
+    src/MotionShot.cpp
+)
+target_link_libraries(${PROJECT_NAME}
     ${OpenCV_LIBS}
-    # ${Boost_LIBRARIES}
+    ${Boost_LIBRARIES}
     # ${CSPARSE_LIBRARY}
     # ${CHOLMOD_LIBRARIES}
     # ${G2O_LIBS}
 )
+set(LIB_MotionShot ${PROJECT_NAME})
 
 add_subdirectory(src)
 
