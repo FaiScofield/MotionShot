@@ -1,6 +1,7 @@
 #ifndef MOTION_TRACKER_H
 #define MOTION_TRACKER_H
 
+#include "BaseBackgroundSubtractor.h"
 #include <list>
 #include <opencv2/core/core.hpp>
 #include <opencv2/video/video.hpp>
@@ -9,11 +10,12 @@ namespace ms
 {
 
 class Object {
+public:
     Object(): _id(_globalID++), _updated(false) {}
 
     int splitToCells();
 
-    static int _globalID = 0;
+    static int _globalID;
     int _id;
     bool _updated;
 
@@ -22,21 +24,21 @@ class Object {
     cv::Scalar _color;
     cv::Point _speed;
     std::list<cv::Point> _history;
+    std::vector<std::vector<cv::Point>> _contours;
 
     cv::Size _cellsXY;
     std::vector<cv::Rect> _cells;
     std::vector<bool> _validCell;
 };
 
-
 class MotionTracker
 {
 public:
     MotionTracker();
-    MotionTracker(cv::BackgroundSubtractorMOG2* bg);
+    MotionTracker(BaseBackgroundSubtractor* bs);
     ~MotionTracker();
 
-    void SetBackgroundSubtractor(cv::BackgroundSubtractorMOG2* bg){ _substractor = bg; }
+    void SetBackgroundSubtractor(BaseBackgroundSubtractor* bs){ _substractor = bs; }
     void SetMinBlobSize(const cv::Size& s) { _minBlobSize = s; }
     std::vector<cv::Rect> GetBlobs() const { return _blobs; }
     std::list<Object> GetObjects() const { return _objects; }
@@ -62,7 +64,7 @@ private:
     int _curId;
     bool _defaultConstruct;
 
-    cv::BackgroundSubtractorMOG2* _substractor;
+    BaseBackgroundSubtractor* _substractor;
 
     std::list<Object> _objects;
     std::vector<cv::Rect> _blobs;

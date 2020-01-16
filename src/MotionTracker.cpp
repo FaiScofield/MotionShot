@@ -1,4 +1,5 @@
 #include "MotionTracker.h"
+#include "BS_MOG2_CV.h"
 #include <iostream>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
@@ -10,6 +11,8 @@ namespace ms
 
 using namespace std;
 using namespace cv;
+
+int Object::_globalID = 0;
 
 int Object::splitToCells() {
     int w = 0, h = 0, n = 0;
@@ -30,11 +33,13 @@ int Object::splitToCells() {
 MotionTracker::MotionTracker() : _curId(0), _defaultConstruct(true)
 {
     _minBlobSize = Size(3, 3);
-    _substractor = createBackgroundSubtractorMOG2().get();
+    auto cvBS = createBackgroundSubtractorMOG2(500, 200, true);
+    BS_MOG2_CV be(cvBS.get());
+    _substractor = dynamic_cast<BaseBackgroundSubtractor*>(&be);
 }
 
-MotionTracker::MotionTracker(BackgroundSubtractorMOG2* bg)
-    : _curId(0), _defaultConstruct(false), _substractor(bg)
+MotionTracker::MotionTracker(BaseBackgroundSubtractor* bs)
+    : _curId(0), _defaultConstruct(false), _substractor(bs)
 {
      _minBlobSize = Size(3, 3);
 }
@@ -48,12 +53,13 @@ MotionTracker::~MotionTracker()
 void MotionTracker::SubstractBackground(const Mat& input, Mat& mask)
 {
     _substractor->apply(input, mask);
-    Mat element = getStructuringElement(MORPH_ELLIPSE, Size(7, 7));
-    erode(mask, mask, element);   // 腐蚀
-    dilate(mask, mask, element);  // 膨胀
-    dilate(mask, mask, element);  // 膨胀
-    erode(mask, mask, element);   // 腐蚀
-    dilate(mask, mask, Mat());
+    assert(!mask.empty());
+//    Mat element = getStructuringElement(MORPH_ELLIPSE, Size(7, 7));
+//    erode(mask, mask, element);   // 腐蚀
+//    dilate(mask, mask, element);  // 膨胀
+//    dilate(mask, mask, element);  // 膨胀
+//    erode(mask, mask, element);   // 腐蚀
+//    dilate(mask, mask, Mat());
 
     _frame = input.clone();
     _foreground = mask.clone();
@@ -63,14 +69,14 @@ void MotionTracker::SubstractBackground(const Mat& input, Mat& mask)
 void MotionTracker::DetectBlocks()
 {
     vector<vector<Point>> contours;
-    findContours(_foreground, contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
+    findContours(_foreground, contours, RETR_EXTERNAL, CHAIN_APPROX_TC89_KCOS); // CHAIN_APPROX_TC89_L1, CHAIN_APPROX_NONE
 
     _contoursImage = _frame.clone();
-    drawContours(_contoursImage, contours, -1, CV_RGB(0, 255, 0));
+    drawContours(_contoursImage, contours, -1, Scalar(0, 255, 0), -1);
 
     BlobFilter(contours);
 
-    DisplayBlobs("blobsFilteredImg");
+    DisplayBlobs("blobsFilteredImage");
 }
 
 void MotionTracker::BlobFilter(const vector<vector<Point>>& contours)

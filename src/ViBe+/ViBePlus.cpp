@@ -401,7 +401,7 @@ void ViBePlus::CalcuUpdateModel()
     // 提取轮廓
     // Extract Contours
     findContours(imgtmp, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_NONE);
-    for (int i = 0; i < contours.size(); i++) {
+    for (size_t i = 0; i < contours.size(); i++) {
         // 一级父轮廓
         // Level 1 of Father Contour
         int father = hierarchy[i][3];
@@ -505,7 +505,7 @@ void ViBePlus::CalcuUpdateModel()
     SegModel.copyTo(imgtmp);
     findContours(imgtmp, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_NONE);
 
-    for (int i = 0; i < contours.size(); i++) {
+    for (size_t i = 0; i < contours.size(); i++) {
         // 一级父轮廓
         // Level 1 of Father Contour
         int father = hierarchy[i][3];

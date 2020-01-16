@@ -1,6 +1,8 @@
 #include "utility.h"
 #include "MotionShot.h"
 #include "MotionTracker.h"
+#include "BS_MOG2_CV.h"
+//#include "FramesDifference.h"
 #include <iostream>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
@@ -44,7 +46,13 @@ int main(int argc, char *argv[])
     }
 
     auto bs = createBackgroundSubtractorMOG2(500, 100, false);
-    MotionTracker tracker(bs.get());
+    BS_MOG2_CV be(bs.get());
+
+//    FramesDifference fd;
+
+    MotionTracker tracker;
+    tracker.SetBackgroundSubtractor(dynamic_cast<BaseBackgroundSubtractor*>(&be));
+//    tracker.SetBackgroundSubtractor(dynamic_cast<BaseBackgroundSubtractor*>(&fd));
     tracker.SetMinBlobSize(Size(5, 5));
 
     Mat frame, gray, mask, mask_gt, output;
@@ -57,7 +65,7 @@ int main(int argc, char *argv[])
             tracker.DisplayObjects("Objects");
             tracker.DisplayDetail("Detial");
 
-            if (waitKey(40) == 27)
+            if (waitKey(300) == 27)
                 break;
 
             vc >> frame;
@@ -76,7 +84,7 @@ int main(int argc, char *argv[])
             tracker.DisplayObjects("Objects");
             tracker.DisplayDetail("Details");
 
-            if (waitKey(50) == 27)
+            if (waitKey(300) == 27)
                 break;
         }
     }

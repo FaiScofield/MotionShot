@@ -1,4 +1,5 @@
 #include "FramesDifference.h"
+#include <opencv2/imgproc/imgproc.hpp>
 #include <iostream>
 
 namespace ms {
@@ -6,10 +7,15 @@ namespace ms {
 using namespace cv;
 using namespace std;
 
-void FramesDifference::apply(const cv::Mat& img, cv::Mat& mask)
+void FramesDifference::apply(const cv::Mat& input, cv::Mat& mask)
 {
-    assert(!img.empty());
-    assert(img.type() == CV_8UC1);    // 输入图像限定为8位灰度图
+    assert(!input.empty());
+
+    Mat img;
+    if (input.type() == CV_8UC3)
+        cvtColor(input, img, COLOR_BGR2GRAY);
+    else
+        img = input;
 
     if (_delta == 3) {
         img.copyTo(_image3);
@@ -39,12 +45,7 @@ Mat FramesDifference::getMotionMask2()
 
         threshold(diff, diff, 25, 255, CV_THRESH_BINARY);
 
-        // 去除图像噪声, 先腐蚀再膨胀(形态学开运算)
-        Mat element = getStructuringElement(MORPH_RECT, Size(_structureSize, _structureSize));
-//        erode(diff, diff, element);   // 腐蚀
-//        dilate(diff, diff, element);  // 膨胀
-        dilate(diff, diff, element);
-        erode(diff, diff, element);
+        filterMask(diff, _structureSize);
 
         _diff1 = diff.clone();
         _image1 = _image2.clone();
@@ -86,17 +87,23 @@ Mat FramesDifference::getMotionMask3()
         diff.convertTo(diff, CV_8UC1);
         threshold(diff, diff, 25, 255, CV_THRESH_BINARY);
 
-        // 去除图像噪声, 先腐蚀再膨胀(形态学开运算)
-        Mat element = getStructuringElement(MORPH_RECT, Size(_structureSize, _structureSize));
-//        erode(diff, diff, element);   // 腐蚀
-//        dilate(diff, diff, element);  // 膨胀
-        dilate(diff, diff, element);
-        erode(diff, diff, element);
+        filterMask(diff, _structureSize);
 
         _image1 = _image2.clone();
         _image2 = _image3.clone();
         return diff;
     }
 }
+
+//void FramesDifference::filterMask(Mat &mask, int size)
+//{
+//    Mat element = getStructuringElement(MORPH_RECT, Size(size, size));
+//    erode(mask, mask, Mat());   // 腐蚀
+//    dilate(mask, mask, Mat());  // 膨胀
+//    dilate(mask, mask, element);
+//    erode(mask, mask, element);
+//    erode(mask, mask, element);
+//    dilate(mask, mask, element);
+//}
 
 }

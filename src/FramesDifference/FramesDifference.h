@@ -1,17 +1,18 @@
-#ifndef FRAMESDIFFERENCE_H
-#define FRAMESDIFFERENCE_H
+#ifndef FRAMES_DIFFERENCE_H
+#define FRAMES_DIFFERENCE_H
 
+#include "BaseBackgroundSubtractor.h"
 #include <opencv2/core/core.hpp>
-#include <opencv2/imgproc/imgproc.hpp>
 
 namespace ms
 {
 
-class FramesDifference
+class FramesDifference : public BaseBackgroundSubtractor
 {
 public:
-    FramesDifference() : _delta(2), _structureSize(5) {}
-    FramesDifference(int d, int s) : _delta(d), _structureSize(s) {}
+    FramesDifference() : BaseBackgroundSubtractor(), _delta(2), _structureSize(5) {}
+    FramesDifference(int d, int s) : BaseBackgroundSubtractor(), _delta(d), _structureSize(s) {}
+    ~FramesDifference() {}
 
     inline void setDelta(int delta) { _delta = delta; }
     inline int  getDelta() const { return _delta; }
@@ -20,6 +21,7 @@ public:
     void apply(const cv::Mat& img, cv::Mat& mask);
 
 private:
+    // void filterMask(cv::Mat& mask);
     cv::Mat getMotionMask2();
     cv::Mat getMotionMask3();
 
@@ -32,4 +34,4 @@ private:
 };
 
 }  // namespace ms
-#endif  // FRAMESDIFFERENCE_H
+#endif  // FRAMES_DIFFERENCE_H
