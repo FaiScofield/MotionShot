@@ -1,5 +1,5 @@
-#ifndef BASE_BACKGROUND_SUBTRACTOR_H
-#define BASE_BACKGROUND_SUBTRACTOR_H
+#ifndef BASE_MOTION_DETECTOR_H
+#define BASE_MOTION_DETECTOR_H
 
 #include <opencv2/core/core.hpp>
 #include <opencv2/video/video.hpp>
@@ -7,11 +7,11 @@
 namespace ms
 {
 
-class BaseBackgroundSubtractor
+class BaseMotionDetector
 {
 public:
-    BaseBackgroundSubtractor() : _isFirstFrame(true), _structureSize(5) {}
-    virtual ~BaseBackgroundSubtractor() {}
+    BaseMotionDetector() : _isFirstFrame(true), _structureSize(5) {}
+    virtual ~BaseMotionDetector() {}
 
     // virtual void init();
 
@@ -19,7 +19,7 @@ public:
 
     void filterMask(cv::Mat& mask, int size = 0);
 
-    /*virtual*/ void apply(const cv::Mat& input, cv::Mat& mask) {}
+    virtual void apply(const cv::Mat& input, cv::Mat& mask) {}
 
 private:
     bool _isFirstFrame;
@@ -28,4 +28,4 @@ private:
 
 }  // namespace ms
 
-#endif  // BASE_BACKGROUND_SUBTRACTOR_H
+#endif  // BASE_MOTION_DETECTOR_H

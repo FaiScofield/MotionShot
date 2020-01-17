@@ -1,17 +1,17 @@
 #ifndef FRAMES_DIFFERENCE_H
 #define FRAMES_DIFFERENCE_H
 
-#include "BaseBackgroundSubtractor.h"
+#include "BaseMotionDetector.h"
 #include <opencv2/core/core.hpp>
 
 namespace ms
 {
 
-class FramesDifference : public BaseBackgroundSubtractor
+class FramesDifference : public BaseMotionDetector
 {
 public:
-    FramesDifference() : BaseBackgroundSubtractor(), _delta(2), _structureSize(5) {}
-    FramesDifference(int d, int s) : BaseBackgroundSubtractor(), _delta(d), _structureSize(s) {}
+    FramesDifference() : BaseMotionDetector(), _delta(2), _structureSize(5) {}
+    FramesDifference(int d, int s) : BaseMotionDetector(), _delta(d), _structureSize(s) {}
     ~FramesDifference() {}
 
     inline void setDelta(int delta) { _delta = delta; }

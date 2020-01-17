@@ -1,4 +1,4 @@
-#include "MotionShot.h"
+#include "MotionShoter.h"
 #include "utility.h"
 
 #include <iostream>

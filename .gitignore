@@ -2,6 +2,7 @@
 build/
 bin/
 lib/
+build-clang/
 _clang-format
 *.user
 

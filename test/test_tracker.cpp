@@ -1,8 +1,7 @@
 #include "utility.h"
-#include "MotionShot.h"
 #include "MotionTracker.h"
 #include "BS_MOG2_CV.h"
-//#include "FramesDifference.h"
+#include "FramesDifference.h"
 #include <iostream>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
@@ -51,19 +50,19 @@ int main(int argc, char *argv[])
 //    FramesDifference fd;
 
     MotionTracker tracker;
-    tracker.SetBackgroundSubtractor(dynamic_cast<BaseBackgroundSubtractor*>(&be));
+    tracker.setBackgroundSubtractor(dynamic_cast<BaseMotionDetector*>(&be));
 //    tracker.SetBackgroundSubtractor(dynamic_cast<BaseBackgroundSubtractor*>(&fd));
-    tracker.SetMinBlobSize(Size(5, 5));
+    tracker.setMinBlobSize(Size(5, 5));
 
     Mat frame, gray, mask, mask_gt, output;
     if (g_type == VIDEO) {
         vc >> frame;
         while (!frame.empty()) {
-            tracker.SubstractBackground(frame, mask);
-            tracker.DetectBlocks();
-            tracker.MatchObject();
-            tracker.DisplayObjects("Objects");
-            tracker.DisplayDetail("Detial");
+            tracker.substractBackground(frame, mask);
+            tracker.detectBlocks();
+            tracker.matchObject();
+            tracker.displayObjects("Objects");
+            tracker.displayDetail("Detial");
 
             if (waitKey(300) == 27)
                 break;
@@ -78,11 +77,11 @@ int main(int argc, char *argv[])
                 cerr << "Empty image for " << vImags[i] << endl;
                 continue;
             }
-            tracker.SubstractBackground(frame, mask);
-            tracker.DetectBlocks();
-            tracker.MatchObject();
-            tracker.DisplayObjects("Objects");
-            tracker.DisplayDetail("Details");
+            tracker.substractBackground(frame, mask);
+            tracker.detectBlocks();
+            tracker.matchObject();
+            tracker.displayObjects("Objects");
+            tracker.displayDetail("Details");
 
             if (waitKey(300) == 27)
                 break;

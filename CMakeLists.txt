@@ -81,27 +81,29 @@ endif()
 #     message("===> G2O Not Found!!!" )
 # endif()
 
+
 include_directories(
     ${PROJECT_SOURCE_DIR}
-    ${PROJECT_SOURCE_DIR}/include/MotionShot
     ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/src/BGDifference
-    ${PROJECT_SOURCE_DIR}/src/BackgroundExtractor
-    ${PROJECT_SOURCE_DIR}/src/FramesDifference
-    ${PROJECT_SOURCE_DIR}/src/ViBe
-    ${PROJECT_SOURCE_DIR}/src/ViBe+
+    ${PROJECT_SOURCE_DIR}/src/MotionDetector
+    ${PROJECT_SOURCE_DIR}/src/MotionTracker
+    ${PROJECT_SOURCE_DIR}/src/MotionShoter
+    ${PROJECT_SOURCE_DIR}/src/ImageStitching
 )
 
 set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
 set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 
+# Lib
+aux_source_directory(${PROJECT_SOURCE_DIR}/src/MotionDetector DETECTOR_SRC_FILES)
+aux_source_directory(${PROJECT_SOURCE_DIR}/src/MotionTracker  TRACKER_SRC_FILES)
+aux_source_directory(${PROJECT_SOURCE_DIR}/src/MotionShoter   SHOTER_SRC_FILES)
+aux_source_directory(${PROJECT_SOURCE_DIR}/src/ImageStitching STITCHING_SRC_FILES)
 add_library(${PROJECT_NAME} SHARED
-    include/MotionShot/BaseBackgroundSubtractor.h
-
-    src/utility.cpp
-    src/BaseBackgroundSubtractor.cpp
-    src/MotionTracker.cpp
-    src/MotionShot.cpp
+    ${DETECTOR_SRC_FILES}
+    ${TRACKER_SRC_FILES}
+    ${SHOTER_SRC_FILES}
+    ${STITCHING_SRC_FILES}
 )
 target_link_libraries(${PROJECT_NAME}
     ${OpenCV_LIBS}
@@ -112,5 +114,6 @@ target_link_libraries(${PROJECT_NAME}
 )
 set(LIB_MotionShot ${PROJECT_NAME})
 
-add_subdirectory(src)
 
+add_subdirectory(src)
+add_subdirectory(test)

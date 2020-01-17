@@ -1,9 +1,9 @@
-#include "BaseBackgroundSubtractor.h"
+#include "BaseMotionDetector.h"
 #include <opencv2/imgproc/imgproc.hpp>
 
 namespace ms {
 
-void BaseBackgroundSubtractor::filterMask(cv::Mat &mask, int size)
+void BaseMotionDetector::filterMask(cv::Mat &mask, int size)
 {
     size = size < 2 ? _structureSize : size;
 
