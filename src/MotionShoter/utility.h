@@ -9,7 +9,8 @@ namespace ms
 
 enum InputType {
     VIDEO,
-    DATASET
+    DATASET,
+    IMAGES
 };
 
 void ReadImageGTFiles(const std::string& folder, std::vector<std::string>& gtFiles);

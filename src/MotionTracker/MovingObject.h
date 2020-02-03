@@ -30,7 +30,7 @@ public:
     std::vector<bool> _validCell;
 };
 
-int MovingObject::_globalID = 0;
+
 
 }  // namespace ms
 #endif  // MOVING_OBJECT_H

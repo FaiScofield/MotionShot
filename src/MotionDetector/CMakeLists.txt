@@ -1,1 +1,1 @@
-aux_source_directory(. DETECTOR_SRC_FILES)
+#aux_source_directory(. DETECTOR_SRC_FILES)

@@ -247,7 +247,7 @@ void MotionTracker::displayOpticalFlow(const string &name_of_window)
     const int Y = _currentFrame.rows / cellSize;
     const int N = X * Y;
     vector<vector<Point2f>> flowInCell(N);
-    for (size_t i = 0; i < N; ++i)
+    for (int i = 0; i < N; ++i)
         flowInCell[i].reserve(cellArea);
 
     Scalar color(0, 255, 0);
