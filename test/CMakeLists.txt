@@ -18,8 +18,10 @@ add_executable(test_blender test_blender.cpp)
 target_link_libraries(test_blender ${LIB_MotionShot})
 
 add_executable(test_stitcher test_stitcher.cpp)
-target_link_libraries(test_stitcher ${OpenCV_LIBS})
+target_link_libraries(test_stitcher ${LIB_MotionShot})
 
+add_executable(test_shoter_simple test_shoter_simple.cpp)
+target_link_libraries(test_shoter_simple ${LIB_MotionShot})
 
 
 #add_executable(test_tracker test_tracker.cpp)

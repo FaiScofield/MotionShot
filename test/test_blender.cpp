@@ -44,9 +44,9 @@ int main(int argc, char* argv[])
     }
 */
 
-    Mat src = imread("/home/vance/rk_ws/MotionShot/resource/blending/source_02.jpg", CV_LOAD_IMAGE_COLOR);
-    Mat mask = imread("/home/vance/rk_ws/MotionShot/resource/blending/mask_02.jpg", CV_LOAD_IMAGE_GRAYSCALE);
-    Mat targ = imread("/home/vance/rk_ws/MotionShot/resource/blending/target_02.jpg", CV_LOAD_IMAGE_COLOR);
+    Mat src = imread("/home/vance/rk_ws/MotionShot/resource/blending/source_02.jpg", IMREAD_COLOR);
+    Mat mask = imread("/home/vance/rk_ws/MotionShot/resource/blending/mask_02.jpg", IMREAD_GRAYSCALE);
+    Mat targ = imread("/home/vance/rk_ws/MotionShot/resource/blending/target_02.jpg", IMREAD_COLOR);
     if (src.empty() || mask.empty() || targ.empty()) {
         cerr << "Empty Images!" << endl;
         exit(-1);

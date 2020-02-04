@@ -1,3 +1,4 @@
+#include "ImageStitcher/ImageStitcher.h"
 #include <iostream>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
@@ -15,8 +16,9 @@ int main(int argc, char* argv[])
 
     Mat image1 = imread(argv[1]);
     Mat image2 = imread(argv[2]);
-    imshow("image1", image1);
-    imshow("image2", image2);
+    Mat tmp;
+    hconcat(image1, image2, tmp);
+    imshow("original images", tmp);
 
     vector<Mat> vImages;
     vImages.push_back(image2);
@@ -31,8 +33,13 @@ int main(int argc, char* argv[])
         return -1;
     }
 
-    imshow("Result", pano);
-    imwrite("/home/vance/output/result.bmp", pano);
+    imshow("Result Pano", pano);
+    imwrite("/home/vance/output/result_pano.bmp", pano);
+
+    // test
+    ms::ImageStitcher is;
+    Mat H21 = is.computeHomography(image1, image2);
+    cout << H21 << endl;
 
     waitKey(0);
 

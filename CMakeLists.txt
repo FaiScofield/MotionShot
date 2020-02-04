@@ -98,14 +98,14 @@ set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 aux_source_directory(${PROJECT_SOURCE_DIR}/src/MotionDetector DETECTOR_SRC_FILES)
 #aux_source_directory(${PROJECT_SOURCE_DIR}/src/MotionTracker  TRACKER_SRC_FILES)
 aux_source_directory(${PROJECT_SOURCE_DIR}/src/MotionShoter   SHOTER_SRC_FILES)
-aux_source_directory(${PROJECT_SOURCE_DIR}/src/ImageStitching STITCHING_SRC_FILES)
-aux_source_directory(${PROJECT_SOURCE_DIR}/src/ImageBlending  BLENDING_SRC_FILES)
+aux_source_directory(${PROJECT_SOURCE_DIR}/src/ImageStitcher  STITCHER_SRC_FILES)
+aux_source_directory(${PROJECT_SOURCE_DIR}/src/ImageBlender   BLENDER_SRC_FILES)
 add_library(${PROJECT_NAME} SHARED
     ${DETECTOR_SRC_FILES}
 #    ${TRACKER_SRC_FILES}
     ${SHOTER_SRC_FILES}
-    ${STITCHING_SRC_FILES}
-    ${BLENDING_SRC_FILES}
+    ${STITCHER_SRC_FILES}
+    ${BLENDER_SRC_FILES}
 )
 target_link_libraries(${PROJECT_NAME}
     ${OpenCV_LIBS}
