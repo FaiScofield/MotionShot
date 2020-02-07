@@ -74,7 +74,7 @@ Mat ImageStitcher::computeHomography(const Mat& img1, const Mat& img2)
         y = keypoints2[it->trainIdx].pt.y;
         points2.push_back(Point2f(x, y));
     }
-    cout << "number of matched points: " << points1.size() << " & " << points2.size() << endl;
+//    cout << "number of matched points: " << points1.size() << " & " << points2.size() << endl;
 
     // 使用RANSAC算法估算单应矩阵
     vector<char> inliers;
