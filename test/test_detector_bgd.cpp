@@ -40,37 +40,20 @@ int main(int argc, char** argv)
         exit(-1);
     }
 
-    string dataPath(argv[1]); // "不要以/结尾"
+    string dataPath(argv[1]);
     boost::filesystem::path path(dataPath);
-    if (boost::filesystem::is_directory(path))
+    vector<Mat> vImags, vMaskGTs;
+    if (boost::filesystem::is_directory(path)) {
         g_type = DATASET;
-    else
-        g_type = VIDEO;
-
-    VideoCapture vc;
-    vector<string> vImags, vMaskGTs;
-    if (g_type == VIDEO) {
-        vc.open(dataPath);
-        if (!vc.isOpened()) {
-            cerr << "Unable to open video file: " << dataPath << endl;
-            exit(-1);
-        }
+        ReadImageSequence_lasisesta(dataPath, vImags, vMaskGTs);
     } else {
-        assert(g_type == DATASET);
-
-        string gtPath = dataPath + "-GT/";
-        ReadImageFiles(dataPath, vImags);
-        ReadImageGTFiles(gtPath, vMaskGTs);
+        g_type = VIDEO;
+        ReadImagesFromVideo(dataPath, vImags);
     }
 
-    // 原图像
-    Mat pFrame;
-    // 原始OTSU算法输出图像
-    Mat pFroundImg;
-    // 背景图像
-    Mat pBackgroundImg;
-    // 改进的OTSU算法输出图像
-    Mat pFroundImg_c;
+    Mat pFroundImg; // 原始OTSU算法输出图像
+    Mat pBackgroundImg; // 背景图像
+    Mat pFroundImg_c;   // 改进的OTSU算法输出图像
     Mat pBackgroundImg_c;
 
     //视频控制全局变量,
@@ -84,13 +67,12 @@ int main(int argc, char** argv)
     int nFrmNum = 0;
 
     // 逐帧读取视频
-    vc >> pFrame;
-    while (!pFrame.empty()) {
-        vc >> pFrame;
+    for (size_t i = 0, iend = vImags.size(); i < iend; ++i) {
+        const Mat& pFrame = vImags[i];
         nFrmNum++;
 
         // 视频控制
-        if ((ctrl = cvWaitKey(1000 / 25)) == 's')
+        if ((ctrl = waitKey(1000 / 25)) == 's')
             waitKey(0);
         else if (ctrl == 'p')
             cout << "Current Frame = " << nFrmNum << endl;
@@ -108,5 +90,6 @@ int main(int argc, char** argv)
         imshow("OTSU ForeGround", pFroundImg);
         imshow("Advanced OTSU ForeGround", pFroundImg_c);
     }
+
     return 0;
 }

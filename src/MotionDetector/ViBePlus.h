@@ -22,6 +22,7 @@
 #ifndef VIBEPLUS_H
 #define VIBEPLUS_H
 
+#include "BaseMotionDetector.h"
 #include "ViBePlusMacro.h"
 #include <cstdio>
 #include <iostream>
@@ -30,7 +31,7 @@
 namespace ms
 {
 
-class ViBePlus
+class ViBePlus : public BaseMotionDetector
 {
 public:
     ViBePlus(int num_sam = DEFAULT_NUM_SAMPLES, int min_match = DEFAULT_MIN_MATCHES,

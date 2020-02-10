@@ -48,40 +48,8 @@ int main(int argc, char* argv[])
         if (i % 2 == 0)
             toStitch.push_back(vImages[i]);
     }
-//    toStitch[0] = vImages.front();
-//    toStitch[1] = vImages.back();
-//    vector<Mat> toStitch = vImages;
 
-    Mat pano;
-    Ptr<Stitcher> stitcher = Stitcher::create(Stitcher::SCANS, false);
-//    Stitcher::Status status = stitcher->stitch(toStitch, pano);
-//    Stitcher::Status status = stitcher->estimateTransform(toStitch);
-//    if (status != Stitcher::OK) {
-//        cerr << "Can't stitch images, error code = " << int(status) << endl;
-//        system("pause");
-//        return -1;
-//    }
-//    status = stitcher->composePanorama(pano);
-//    if (status != Stitcher::OK) {
-//        cerr << "Can't stitch images, error code = " << int(status) << endl;
-//        system("pause");
-//        return -1;
-//    }
-
-    pano = vImages.back().clone();
-    Mat firstAndLast;
-    hconcat(toStitch.front(), toStitch.back(), firstAndLast);
-    imshow("The First And The Last Image", firstAndLast);
-    //imshow("Stitched Image", pano);
-    imwrite("/home/vance/output/pano.bmp", pano);
-
-    cout << " - workScale = " << stitcher->workScale() << endl;
-    cout << " - seamEstimationResol = " << stitcher->seamEstimationResol() << endl;
-    cout << " - registrationResol = " << stitcher->registrationResol() << endl;
-    cout << " - compositingResol = " << stitcher->compositingResol() << endl;
-    cout << " - image size = " << vImages[0].cols << " x " << vImages[0].rows << endl;
-    cout << " - pano size = " << pano.cols << " x " << pano.rows << endl;
-
+    Mat pano = vImages.back().clone();
 
     // get Homographies and ROIs
     ms::ImageStitcher msStitcher;

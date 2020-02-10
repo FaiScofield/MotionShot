@@ -19,6 +19,7 @@
 ===================================================================
 */
 
+#include "BaseMotionDetector.h"
 #include "opencv2/opencv.hpp"
 #include <cstdio>
 #include <iostream>
@@ -42,7 +43,7 @@ namespace ms
 // the Default the probability of random sample
 #define DEFAULT_RANDOM_SAMPLE 16
 
-class ViBe
+class ViBe : public BaseMotionDetector
 {
 public:
     ViBe(int num_sam = DEFAULT_NUM_SAMPLES, int min_match = DEFAULT_MIN_MATCHES,

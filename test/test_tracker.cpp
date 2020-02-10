@@ -40,8 +40,8 @@ int main(int argc, char *argv[])
         assert(g_type == DATASET);
 
         string gtPath = dataPath + "-GT/";
-        ReadImageFiles(dataPath, vImags);
-        ReadImageGTFiles(gtPath, vMaskGTs);
+        ReadImagesFromFolder_lasisesta(dataPath, vImags);
+        ReadGroundtruthFromFolder_lasisesta(gtPath, vMaskGTs);
     }
 
     auto bs = createBackgroundSubtractorMOG2(500, 100, false);

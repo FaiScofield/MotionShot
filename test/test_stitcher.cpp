@@ -1,59 +1,125 @@
+#include "utility.h"
 #include "ImageStitcher/ImageStitcher.h"
 #include <iostream>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/stitching.hpp>
+#include <boost/filesystem.hpp>
 
+using namespace ms;
 using namespace std;
 using namespace cv;
+namespace bf = boost::filesystem;
 
-const double g_scale = 0.15;
+const int g_delta = 3;
 
 int main(int argc, char* argv[])
 {
-    if (argc < 3) {
-        cerr << "Parameters: <image1> <image2> or <image_sequence_folder> <image_count>" << endl;
+    /// parse input arguments
+    CommandLineParser parser(argc, argv,
+        "{type      t|sequence|input type for one of VIDEO, DATASET, SEQUENCE, TWO_IMAGES}"
+        "{folder    f| |data folder or video file for type DATASET or VIDEO or SEQUENCE}"
+        "{suffix    s|jpg|image suffix}"
+        "{img1      1| |the first image for type TWO_IMAGES}"
+        "{img2      2| |the second image for type TWO_IMAGES}"
+        "{start     a|0|start index for image sequence}"
+        "{num       n|0|number to process for image sequence}"
+        "{scale     c|1|scale to resize image}"
+        "{help      h|false|show help message}");
+
+    if (parser.get<bool>("help")) {
+        parser.printMessage();
+        return 0;
+    }
+
+    InputType inputType;
+    const String str_type = parser.get<String>("type");
+    cout << " - type = " << str_type << endl;
+    if (str_type == "dataset" || str_type == "DATASET") {
+        inputType = DATASET;
+    } else if (str_type == "sequence" || str_type == "SEQUENCE") {
+        inputType = SEQUENCE;
+    } else if (str_type == "video" || str_type == "VIDEO") {
+        inputType = VIDEO;
+    } else if (str_type == "two_images" || str_type == "TWO_IMAGES") {
+        inputType = TWO_IMAGES;
+    } else {
+        cerr << "[Error] Unknown input type for " << str_type << endl;
+        return -1;
+    }
+
+    String str_folder = parser.get<String>("folder");
+    cout << " - folder = " << str_folder << endl;
+    if (str_folder.find_last_of('/') != String::npos)
+        str_folder = str_folder.substr(0, str_folder.size() - 1);
+
+
+    int start = parser.get<int>("start");
+    int num = parser.get<int>("num");
+    cout << " - start = " << start << endl;
+    cout << " - num = " << num << endl;
+    assert(num > 1);
+
+    //// read images
+    vector<Mat> vImages, toStitch;
+    Mat image1, image2;
+    String str_suffix;
+    if (inputType == DATASET) {
+        vector<Mat> gts;
+        ReadImageSequence_lasisesta(str_folder, vImages, gts, start, num);
+    } else if (inputType == VIDEO) {
+        ReadImagesFromVideo(str_folder, vImages, start, num);
+    } else if (inputType == SEQUENCE) {
+        str_suffix = parser.get<String>("suffix");
+        cout << " - suffix = " << str_suffix << endl;
+        ReadImageSequence(str_folder, str_suffix, vImages, start, num);
+    } else {
+        assert(inputType == TWO_IMAGES);
+        Mat img1 = imread(parser.get<String>("img1"));
+        Mat img2 = imread(parser.get<String>("img2"));
+        if (img1.empty() || img2.empty()) {
+            cerr << "[Error] Empty image for img1 or img2!" << endl;
+            return -1;
+        }
+        vImages.push_back(img1);
+        vImages.push_back(img2);
+    }
+    const int N = vImages.size();
+    if (N < 2) {
+        cerr << "Too less imagesinput!" << endl;
         exit(-1);
     }
 
-    vector<Mat> vImages;
-
-    Mat image1 = imread(argv[1]);
-    Mat image2 = imread(argv[2]);
-    if (image1.empty() || image2.empty()) {
-        const string prefix(argv[1]);
-        const int N = atoi(argv[2]);
-        if (N < 2) {
-            cerr << "Need more images" << endl;
-            exit(-1);
+    double scale = parser.get<double>("scale");
+    cout << " - scale = " << scale << endl;
+    assert(scale > 0);
+    if (abs(scale - 1) > 1e-9) {
+        vector<Mat> vImgResized(N);
+        Size imgSize = vImages[0].size();
+        imgSize.width *= scale;
+        imgSize.height *= scale;
+        for (size_t i = 0; i < N; ++i) {
+            Mat imgi;
+            resize(vImages[i], imgi, imgSize);
+            vImgResized[i] = imgi;
         }
+        vImages.swap(vImgResized);
+    }
+    image1 = vImages.front();
+    image2 = vImages.back();
 
-        vImages.reserve(N);
-        for (int i = 0; i < N; ++i) {
-            // string fi = prefix + to_string(i + 1) + ".bmp";
-            string fi = prefix + to_string(i) + ".jpg";
-            Mat imgi = imread(fi, IMREAD_COLOR);
-            if (!imgi.empty()) {
-                Mat tmp;
-                resize(imgi, tmp, Size(imgi.cols * g_scale, imgi.rows * g_scale));
-                vImages.push_back(tmp);
-            } else {
-                cerr << "Empty image for " << fi << endl;
-            }
-        }
-        if (vImages.empty()) {
-            cerr << "Empty folder!" << endl;
-            exit(-1);
-        }
-
-        image1 = vImages.front();
-        image2 = vImages.back();
+    if (inputType == TWO_IMAGES) {
+        toStitch = vImages;
     } else {
-        Mat tmp1, tmp2;
-        resize(image1, tmp1, Size(image1.cols * g_scale, image1.rows * g_scale));
-        resize(image2, tmp2, Size(image2.cols * g_scale, image2.rows * g_scale));
-        vImages.push_back(image1);
-        vImages.push_back(image2);
+        toStitch.reserve(N / g_delta);
+        for (int i = 0; i < N; ++i) {
+            if (i % g_delta == 0)
+                toStitch.push_back(vImages[i]);
+        }
+    }
+    if (toStitch.size() < 2) {
+        cerr << "Too less images or too big delta(" << g_delta << ")!" << endl;
+        exit(-1);
     }
 
     Mat fl;
@@ -61,21 +127,16 @@ int main(int argc, char* argv[])
     imshow("first and last images", fl);
     imwrite("/home/vance/output/first_and_last.bmp", fl);
 
-//    int m = vImages.size() / 3;
-//    vector<Mat> toStitch;
-//    toStitch.reserve(m);
-//    for (int k = 0; k < vImages.size(); ++k) {
-//        if (k % 3 == 0 )
-//            toStitch.push_back(vImages[k]);
-//    }
-
+    /// start stitching
+    cout << "Stitching... This will take a while..." << endl;
     TickMeter tm;
     tm.start();
 
     Mat pano;
-    // Stitcher stitcher = Stitcher::createDefault(false);
+//    ImageStitcher* stitcher = new ImageStitcher();
+//    Ptr<Stitcher> stitcher = Stitcher::create(Stitcher::PANORAMA, false);
     Ptr<Stitcher> stitcher = Stitcher::create(Stitcher::SCANS, false);
-    Stitcher::Status status = stitcher->stitch(vImages/*toStitch*/, pano);
+    Stitcher::Status status = stitcher->stitch(toStitch, pano);
     if (status != Stitcher::OK) {
         cerr << "Can't stitch images, error code = " << int(status) << endl;
         system("pause");
@@ -84,12 +145,15 @@ int main(int argc, char* argv[])
     tm.stop();
     double time = tm.getTimeSec() / tm.getCounter();
 
-//    cout << "Tatal time in image stitching = " << time << "s" << endl;
-//    cout << "Image size = " << image1.cols << " x " << image1.rows << endl;
-//    cout << "Pano size = " << pano.cols << " x " << pano.rows << endl;
+    cout << "Tatal image count = " << toStitch.size() << endl;
+    cout << "Time cost in stitching = " << time << "s" << endl;
+    cout << "Image size = " << image1.cols << " x " << image1.rows << endl;
+    cout << "Pano size = " << pano.cols << " x " << pano.rows << endl;
 
-//    imshow("Result Pano", pano);
-//    imwrite("/home/vance/output/result_pano_cv.bmp", pano);
+    imshow("Result Pano", pano);
+    string fileOut = "/home/vance/output/result_pano_cv_" + to_string(vImages.size()) + "-"
+                     + to_string(toStitch.size()) + ".bmp";
+    imwrite(fileOut, pano);
 /*
     // test
     ms::ImageStitcher is;
@@ -133,9 +197,9 @@ int main(int argc, char* argv[])
         pano2.rowRange(offset_y, offset_y + image2.rows).colRange(offset_x, offset_x + image2.cols));
     imshow("Result Pano2", pano2);
     imwrite("/home/vance/output/result_pano_H.bmp", pano2);
-
+*/
 
     waitKey(0);
-*/
+
     return 0;
 }

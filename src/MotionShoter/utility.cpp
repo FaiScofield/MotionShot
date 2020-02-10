@@ -7,17 +7,23 @@
 #include <string>
 #include <vector>
 
+#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/video/video.hpp>
+
 namespace ms
 {
 
+using namespace cv;
 using namespace std;
 namespace bf = boost::filesystem;
 
-void ReadImageFiles(const string& folder, vector<string>& files)
+void ReadImagesFromFolder_lasisesta(const string& folder, vector<Mat>& imgs)
 {
+    imgs.clear();
+
     bf::path path(folder);
     if (!bf::exists(path)) {
-        cerr << "[Error] Data folder doesn't exist!" << endl;
+        cerr << "[Error] Data folder doesn't exist! " << path << endl;
         return;
     }
 
@@ -39,23 +45,24 @@ void ReadImageFiles(const string& folder, vector<string>& files)
     }
 
     if (allImages.empty()) {
-        cerr << "[Error] Not image data in the folder!" << endl;
+        cerr << "[Error] No image data in the folder!" << endl;
         return;
     } else {
-        cout << "[Info ] Read " << allImages.size() << " image files in the folder." << endl;
+        cout << "[Info ] Read " << allImages.size() << " images in the folder." << endl;
     }
 
-    files.clear();
-    files.reserve(allImages.size());
+    imgs.reserve(allImages.size());
     for (auto it = allImages.begin(), iend = allImages.end(); it != iend; it++)
-        files.push_back(it->second);
+        imgs.push_back(imread(it->second, IMREAD_COLOR));
 }
 
-void ReadImageGTFiles(const string& folder, vector<string>& gtFiles)
+void ReadGroundtruthFromFolder_lasisesta(const string& folder, vector<Mat>& imgs)
 {
+    imgs.clear();
+
     bf::path path(folder);
     if (!bf::exists(path)) {
-        cerr << "[Error] Data folder doesn't exist!" << endl;
+        cerr << "[Error] Data folder doesn't exist!" << path << endl;
         return;
     }
 
@@ -77,17 +84,102 @@ void ReadImageGTFiles(const string& folder, vector<string>& gtFiles)
     }
 
     if (allImages.empty()) {
-        cerr << "[Error] Not image data in the folder!" << endl;
+        cerr << "[Error] No gt image data in the folder!" << endl;
         return;
     } else {
-        cout << "[Info ] Read " << allImages.size() << " image files in the folder." << endl;
+        cout << "[Info ] Read " << allImages.size() << " gt images in the folder." << endl;
     }
 
-    gtFiles.clear();
-    gtFiles.reserve(allImages.size());
+    imgs.reserve(allImages.size());
     for (auto it = allImages.begin(), iend = allImages.end(); it != iend; it++)
-        gtFiles.push_back(it->second);
+        imgs.push_back(imread(it->second, IMREAD_COLOR));
 
+}
+
+void ReadImageSequence_lasisesta(const std::string& folder, std::vector<Mat>& imgs,
+                                 std::vector<cv::Mat>& gts, int startIndex, int num)
+{
+    imgs.clear();
+
+    vector<Mat> allImages, allGts;
+    string gtFolder;
+    if (folder.back() == '/')
+        gtFolder = folder.substr(0, folder.size() - 1) + "-GT/";
+    else
+        gtFolder = folder + "-GT/";
+
+    ReadImagesFromFolder_lasisesta(folder, allImages);
+    ReadImagesFromFolder_lasisesta(gtFolder, allGts);
+
+    assert(startIndex < allImages.size());
+
+    const int S = max(0, startIndex);
+    const int N = min(num, static_cast<int>(allImages.size()) - S);
+    imgs = vector<Mat>(allImages.begin() + S, allImages.begin() + S + N);
+    gts = vector<Mat>(allGts.begin() + S, allGts.begin() + S + N);
+
+    assert(gts.size() == imgs.size());
+    cout << "[Info ] Read " << imgs.size() << " images in the folder." << endl;
+}
+
+void ReadImageSequence(const std::string& prefix, const std::string& suffix, std::vector<cv::Mat>& imgs,
+                       int startIndex, int num)
+{
+    imgs.clear();
+    imgs.reserve(num);
+
+    string pre(prefix), suf(suffix);
+    if (pre.back() != '/')
+        pre += "/";
+    if (suf.front() != '.')
+        suf = "." + suf;
+
+    for (int i = startIndex, iend = startIndex + num; i < iend; ++i) {
+        const string imgName = pre + to_string(i) + suf;
+        Mat img = imread(imgName, IMREAD_COLOR);
+        if (img.empty())
+            cerr << "[Error] No image name " << imgName << endl;
+        else
+            imgs.push_back(img);
+    }
+
+    cout << "[Info ] Read " << imgs.size() << " images in the folder." << endl;
+}
+
+void ReadImagesFromVideo(const std::string& video, std::vector<Mat>& imgs)
+{
+    imgs.clear();
+    imgs.reserve(100);
+
+    VideoCapture capture(video);
+    if (!capture.isOpened()) {
+        cerr << "[Error] Unable to open video file: " << video << endl;
+        return;
+    }
+
+    Mat img;
+    while (capture.read(img))
+        imgs.push_back(img);
+
+    imgs.shrink_to_fit();
+    capture.release();
+
+    cout << "[Info ] Read " << imgs.size() << " images from the video." << endl;
+}
+
+void ReadImagesFromVideo(const string& video, vector<Mat>& imgs, int startIndex, int num)
+{
+    imgs.clear();
+    imgs.reserve(num);
+
+    vector<Mat> allImages;
+    ReadImagesFromVideo(video, allImages);
+
+    const int S = max(0, startIndex);
+    const int N = min(num, static_cast<int>(allImages.size()) - S);
+    imgs = vector<Mat>(allImages.begin() + S, allImages.begin() + S + N);
+
+    cout << "[Info ] Read " << imgs.size() << " images in the folder." << endl;
 }
 
 }  // namespace ms
