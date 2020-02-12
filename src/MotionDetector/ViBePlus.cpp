@@ -71,7 +71,7 @@ void ViBePlus::FrameCapture(Mat img)
 {
     img.copyTo(Frame);
     if (img.channels() == 3) {
-        cvtColor(Frame, Gray, CV_BGR2GRAY);
+        cvtColor(Frame, Gray, COLOR_BGR2GRAY);
         Channels = 3;
     } else {
         img.copyTo(Gray);
@@ -400,7 +400,7 @@ void ViBePlus::CalcuUpdateModel()
 
     // 提取轮廓
     // Extract Contours
-    findContours(imgtmp, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_NONE);
+    findContours(imgtmp, contours, hierarchy, RETR_TREE, CHAIN_APPROX_NONE);
     for (size_t i = 0; i < contours.size(); i++) {
         // 一级父轮廓
         // Level 1 of Father Contour
@@ -503,7 +503,7 @@ void ViBePlus::CalcuUpdateModel()
 
     // 处理分割蒙版前景区域
     SegModel.copyTo(imgtmp);
-    findContours(imgtmp, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_NONE);
+    findContours(imgtmp, contours, hierarchy, RETR_TREE, CHAIN_APPROX_NONE);
 
     for (size_t i = 0; i < contours.size(); i++) {
         // 一级父轮廓

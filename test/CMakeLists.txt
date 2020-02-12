@@ -4,6 +4,9 @@
 add_executable(test_detector test_detector.cpp)
 target_link_libraries(test_detector ${LIB_MotionShot})
 
+add_executable(test_detector_DenseFlow_cv test_detector_DenseFlow_cv.cpp)
+target_link_libraries(test_detector_DenseFlow_cv ${LIB_MotionShot})
+
 
 #add_executable(test_detector_vibe test_detector_vibe.cpp)
 #target_link_libraries(test_detector_vibe ${LIB_MotionShot})

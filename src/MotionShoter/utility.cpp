@@ -96,8 +96,8 @@ void ReadGroundtruthFromFolder_lasisesta(const string& folder, vector<Mat>& imgs
 
 }
 
-void ReadImageSequence_lasisesta(const std::string& folder, std::vector<Mat>& imgs,
-                                 std::vector<cv::Mat>& gts, int startIndex, int num)
+void ReadImageSequence_lasisesta(const string& folder, vector<Mat>& imgs,
+                                 vector<Mat>& gts, int startIndex, int num)
 {
     imgs.clear();
 
@@ -110,11 +110,10 @@ void ReadImageSequence_lasisesta(const std::string& folder, std::vector<Mat>& im
 
     ReadImagesFromFolder_lasisesta(folder, allImages);
     ReadImagesFromFolder_lasisesta(gtFolder, allGts);
-
     assert(startIndex < allImages.size());
 
     const int S = max(0, startIndex);
-    const int N = min(num, static_cast<int>(allImages.size()) - S);
+    const int N = num <= 0 ? allImages.size() - S : min(num, static_cast<int>(allImages.size()) - S);
     imgs = vector<Mat>(allImages.begin() + S, allImages.begin() + S + N);
     gts = vector<Mat>(allGts.begin() + S, allGts.begin() + S + N);
 
@@ -122,7 +121,57 @@ void ReadImageSequence_lasisesta(const std::string& folder, std::vector<Mat>& im
     cout << "[Info ] Read " << imgs.size() << " images in the folder." << endl;
 }
 
-void ReadImageSequence(const std::string& prefix, const std::string& suffix, std::vector<cv::Mat>& imgs,
+void ReadImageSequence_huawei(const string& folder, vector<Mat>& imgs, int startIndex, int num)
+{
+    imgs.clear();
+
+    bf::path path(folder);
+    if (!bf::exists(path)) {
+        cerr << "[Error] Data folder doesn't exist! " << path << endl;
+        return;
+    }
+
+    std::map<int, string> allImages;
+    bf::directory_iterator end_iter;
+    for (bf::directory_iterator iter(path); iter != end_iter; ++iter) {
+        if (bf::is_directory(iter->status()))
+            continue;
+        if (bf::is_regular_file(iter->status())) {
+            // format: IMG_20200205_105231_BURST003.jpg
+            const string fileName = iter->path().string();
+            const size_t i = fileName.find_last_of('T');
+            const size_t j = fileName.find_last_of('.');
+            if (i == string::npos || j == string::npos)
+                continue;
+            auto idx = atoi(fileName.substr(i + 1, j - i - 1).c_str());
+            allImages.emplace(idx, fileName);
+        }
+    }
+
+    if (allImages.empty()) {
+        cerr << "[Error] No image data in the folder!" << endl;
+        return;
+    } else {
+        cout << "[Info ] Read tatal " << allImages.size() << " images in the folder." << endl;
+    }
+    assert(startIndex < allImages.size());
+
+    const int S = max(0, startIndex);
+    const int N = num <= 0 ? allImages.size() - S : min(num, static_cast<int>(allImages.size()) - S);
+    int idx = 0;
+    imgs.reserve(N);
+    for (auto it = allImages.begin(), iend = allImages.end(); it != iend; it++) {
+        if (idx++ < S)
+            continue;
+        imgs.push_back(imread(it->second, IMREAD_COLOR));
+        if (idx - S >= N)
+            break;
+    }
+    cout << "[Info ] Get " << imgs.size() << " images from tatal." << endl;
+    assert(imgs.size() == N);
+}
+
+void ReadImageSequence(const string& prefix, const string& suffix, vector<Mat>& imgs,
                        int startIndex, int num)
 {
     imgs.clear();
@@ -143,10 +192,10 @@ void ReadImageSequence(const std::string& prefix, const std::string& suffix, std
             imgs.push_back(img);
     }
 
-    cout << "[Info ] Read " << imgs.size() << " images in the folder." << endl;
+    cout << "[Info ] Read " << imgs.size() << " images in the sequence." << endl;
 }
 
-void ReadImagesFromVideo(const std::string& video, std::vector<Mat>& imgs)
+void ReadImagesFromVideo(const string& video, vector<Mat>& imgs)
 {
     imgs.clear();
     imgs.reserve(100);
@@ -159,7 +208,7 @@ void ReadImagesFromVideo(const std::string& video, std::vector<Mat>& imgs)
 
     Mat img;
     while (capture.read(img))
-        imgs.push_back(img);
+        imgs.push_back(img.clone()); //! 注意浅拷贝问题
 
     imgs.shrink_to_fit();
     capture.release();
@@ -167,19 +216,20 @@ void ReadImagesFromVideo(const std::string& video, std::vector<Mat>& imgs)
     cout << "[Info ] Read " << imgs.size() << " images from the video." << endl;
 }
 
-void ReadImagesFromVideo(const string& video, vector<Mat>& imgs, int startIndex, int num)
+void ReadImageSequence_video(const string& video, vector<Mat>& imgs, int startIndex, int num)
 {
     imgs.clear();
     imgs.reserve(num);
 
     vector<Mat> allImages;
     ReadImagesFromVideo(video, allImages);
+    assert(startIndex < allImages.size());
 
     const int S = max(0, startIndex);
-    const int N = min(num, static_cast<int>(allImages.size()) - S);
+    const int N = num <= 0 ? allImages.size() - S : min(num, static_cast<int>(allImages.size()) - S);
     imgs = vector<Mat>(allImages.begin() + S, allImages.begin() + S + N);
 
-    cout << "[Info ] Read " << imgs.size() << " images in the folder." << endl;
+    cout << "[Info ] Get " << imgs.size() << " images from tatal (from video)." << endl;
 }
 
 }  // namespace ms

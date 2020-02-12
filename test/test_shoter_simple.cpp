@@ -106,7 +106,7 @@ int main(int argc, char* argv[])
         img_roi = Mat(img_warped, vPanoROIs[i]);
         pano_roi = Mat(pano_gray, vPanoROIs[i]);
         absdiff(pano_roi, img_roi, diff);
-        threshold(diff, diff, 15, 255, CV_THRESH_BINARY);
+        threshold(diff, diff, 15, 255, THRESH_BINARY);
         diff.convertTo(diff, CV_8UC1);
         cv::erode(diff, diff, cv::Mat());   // 腐蚀
         cv::dilate(diff, diff, cv::Mat());  // 膨胀

@@ -27,27 +27,13 @@
 namespace ms
 {
 
-// 每个像素点的样本个数默认值
-// the Default Number of pixel's samples
-#define DEFAULT_NUM_SAMPLES 20
-
-// #min指数默认值
-// the Default Match Number of make pixel as Background
-#define DEFAULT_MIN_MATCHES 2
-
-// Sqthere半径默认值
-// the Default Radius of pixel value
-#define DEFAULT_RADIUS 20
-
-// 子采样概率默认值
-// the Default the probability of random sample
-#define DEFAULT_RANDOM_SAMPLE 16
-
 class ViBe : public BaseMotionDetector
 {
 public:
-    ViBe(int num_sam = DEFAULT_NUM_SAMPLES, int min_match = DEFAULT_MIN_MATCHES,
-         int r = DEFAULT_RADIUS, int rand_sam = DEFAULT_RANDOM_SAMPLE);
+    ViBe(int num_sam = 20,  // Number of pixel's samples
+         int min_match = 2, // Match Number of make pixel as Background
+         int r = 20,        // Radius of pixel value
+         int rand_sam = 16);// the probability of random sample
     ~ViBe();
 
     // 背景模型初始化

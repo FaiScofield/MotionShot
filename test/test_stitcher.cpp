@@ -11,20 +11,23 @@ using namespace std;
 using namespace cv;
 namespace bf = boost::filesystem;
 
-const int g_delta = 3;
+const int delta = 3;
 
 int main(int argc, char* argv[])
 {
     /// parse input arguments
     CommandLineParser parser(argc, argv,
-        "{type      t|sequence|input type for one of VIDEO, DATASET, SEQUENCE, TWO_IMAGES}"
-        "{folder    f| |data folder or video file for type DATASET or VIDEO or SEQUENCE}"
-        "{suffix    s|jpg|image suffix}"
+        "{type      t|VIDEO|value input type: VIDEO, LASISESTA, HUAWEI, SEQUENCE, TWO_IMAGES}"
+        "{folder    f| |data folder or video file for type LASISESTA/HUAWEI/SEQUENCE/VIDEO}"
+        "{suffix    s|jpg|image suffix for type SEQUENCE}"
         "{img1      1| |the first image for type TWO_IMAGES}"
         "{img2      2| |the second image for type TWO_IMAGES}"
         "{start     a|0|start index for image sequence}"
         "{num       n|0|number to process for image sequence}"
-        "{scale     c|1|scale to resize image}"
+        "{scale     c|1|scale to resize image, 0.15 for type HUAWEI}"
+        "{delta     d|1|delta frames to stitch between image sequence}"
+        "{flip      p|0|flip image for type VIDEO, 0(x), +(y), -(xy)}"
+        "{rotate    r|-1|rotate image for type VIDEO, r = cv::RotateFlags(0, 1, 2)}"
         "{help      h|false|show help message}");
 
     if (parser.get<bool>("help")) {
@@ -35,12 +38,14 @@ int main(int argc, char* argv[])
     InputType inputType;
     const String str_type = parser.get<String>("type");
     cout << " - type = " << str_type << endl;
-    if (str_type == "dataset" || str_type == "DATASET") {
-        inputType = DATASET;
+    if (str_type == "video" || str_type == "VIDEO") {
+        inputType = VIDEO;
+    }  else if (str_type == "lasisesta" || str_type == "LASISESTA") {
+        inputType = LASISESTA;
+    } else if (str_type == "huawei" || str_type == "HUAWEI") {
+        inputType = HUAWEI;
     } else if (str_type == "sequence" || str_type == "SEQUENCE") {
         inputType = SEQUENCE;
-    } else if (str_type == "video" || str_type == "VIDEO") {
-        inputType = VIDEO;
     } else if (str_type == "two_images" || str_type == "TWO_IMAGES") {
         inputType = TWO_IMAGES;
     } else {
@@ -50,25 +55,26 @@ int main(int argc, char* argv[])
 
     String str_folder = parser.get<String>("folder");
     cout << " - folder = " << str_folder << endl;
-    if (str_folder.find_last_of('/') != String::npos)
-        str_folder = str_folder.substr(0, str_folder.size() - 1);
-
-
     int start = parser.get<int>("start");
     int num = parser.get<int>("num");
-    cout << " - start = " << start << endl;
-    cout << " - num = " << num << endl;
-    assert(num > 1);
+    int delta = parser.get<int>("delta");
+    double scale = parser.get<double>("scale");
+    int flip = parser.get<int>("flip");
+    int rotate = parser.get<int>("rotate");
+    assert(delta >= 1);
 
     //// read images
     vector<Mat> vImages, toStitch;
     Mat image1, image2;
     String str_suffix;
-    if (inputType == DATASET) {
+    if (inputType == LASISESTA) {
         vector<Mat> gts;
         ReadImageSequence_lasisesta(str_folder, vImages, gts, start, num);
+    } else if (inputType == HUAWEI) {
+        ReadImageSequence_huawei(str_folder, vImages, start, num);
+        //scale = 0.15;
     } else if (inputType == VIDEO) {
-        ReadImagesFromVideo(str_folder, vImages, start, num);
+        ReadImageSequence_video(str_folder, vImages, start, num);
     } else if (inputType == SEQUENCE) {
         str_suffix = parser.get<String>("suffix");
         cout << " - suffix = " << str_suffix << endl;
@@ -84,58 +90,93 @@ int main(int argc, char* argv[])
         vImages.push_back(img1);
         vImages.push_back(img2);
     }
-    const int N = vImages.size();
-    if (N < 2) {
+    if (num <= 0)
+        num = vImages.size();
+    else
+        num = min(num, static_cast<int>(vImages.size()));
+    cout << " - start = " << start << endl;
+    cout << " - num = " << num << endl;
+    cout << " - delta = " << delta << endl;
+    cout << " - scale = " << scale << endl;
+    cout << " - flip flag = " << flip << endl;
+    cout << " - rotate flag = " << rotate << endl;
+    assert(scale > 0);
+    if (num < 2) {
         cerr << "Too less imagesinput!" << endl;
         exit(-1);
     }
 
-    double scale = parser.get<double>("scale");
-    cout << " - scale = " << scale << endl;
-    assert(scale > 0);
+    // scale
     if (abs(scale - 1) > 1e-9) {
-        vector<Mat> vImgResized(N);
+        vector<Mat> vImgResized(num);
         Size imgSize = vImages[0].size();
         imgSize.width *= scale;
         imgSize.height *= scale;
-        for (size_t i = 0; i < N; ++i) {
+        for (int i = 0; i < num; ++i) {
             Mat imgi;
             resize(vImages[i], imgi, imgSize);
             vImgResized[i] = imgi;
         }
         vImages.swap(vImgResized);
     }
+
+    // flip or rotate
+    if (flip != 0) {
+        vector<Mat> vImgRotated(num);
+        for (int i = 0; i < num; ++i) {
+            Mat imgi;
+            cv::flip(vImages[i], imgi, flip);
+            vImgRotated[i] = imgi;
+        }
+        vImages.swap(vImgRotated);
+    } else if (rotate >= 0) {
+        vector<Mat> vImgRotated(num);
+        for (int i = 0; i < num; ++i) {
+            Mat imgi;
+            cv::rotate(vImages[i], imgi, rotate);
+            vImgRotated[i] = imgi;
+        }
+        vImages.swap(vImgRotated);
+    }
+
+    // toStitch
     image1 = vImages.front();
     image2 = vImages.back();
-
     if (inputType == TWO_IMAGES) {
+        assert(vImages.size() == 2);
         toStitch = vImages;
     } else {
-        toStitch.reserve(N / g_delta);
-        for (int i = 0; i < N; ++i) {
-            if (i % g_delta == 0)
+        toStitch.reserve(num / delta);
+        for (int i = 0; i < num; ++i) {
+//            imshow("sequence", vImages[i]);
+//            waitKey(25);
+            if (i % delta == 0)
                 toStitch.push_back(vImages[i]);
         }
     }
+    destroyAllWindows();
     if (toStitch.size() < 2) {
-        cerr << "Too less images or too big delta(" << g_delta << ")!" << endl;
+        cerr << "Too less images or too big delta(" << delta << ")!" << endl;
         exit(-1);
     }
 
     Mat fl;
     hconcat(image1, image2, fl);
+    namedWindow("first and last images", WINDOW_KEEPRATIO | WINDOW_GUI_EXPANDED);
     imshow("first and last images", fl);
     imwrite("/home/vance/output/first_and_last.bmp", fl);
 
     /// start stitching
     cout << "Stitching... This will take a while..." << endl;
+    cout << " - Tatal image count = " << toStitch.size() << endl;
+
     TickMeter tm;
     tm.start();
 
     Mat pano;
 //    ImageStitcher* stitcher = new ImageStitcher();
-//    Ptr<Stitcher> stitcher = Stitcher::create(Stitcher::PANORAMA, false);
-    Ptr<Stitcher> stitcher = Stitcher::create(Stitcher::SCANS, false);
+//    Ptr<Stitcher> stitcher = Stitcher::create(Stitcher::PANORAMA);
+    Ptr<Stitcher> stitcher = Stitcher::create(Stitcher::SCANS);
     Stitcher::Status status = stitcher->stitch(toStitch, pano);
     if (status != Stitcher::OK) {
         cerr << "Can't stitch images, error code = " << int(status) << endl;
@@ -144,12 +185,11 @@ int main(int argc, char* argv[])
     }
     tm.stop();
     double time = tm.getTimeSec() / tm.getCounter();
+    cout << " - Time cost in stitching = " << time << "s" << endl;
+    cout << " - Image size = " << image1.cols << " x " << image1.rows << endl;
+    cout << " - Pano size = " << pano.cols << " x " << pano.rows << endl;
 
-    cout << "Tatal image count = " << toStitch.size() << endl;
-    cout << "Time cost in stitching = " << time << "s" << endl;
-    cout << "Image size = " << image1.cols << " x " << image1.rows << endl;
-    cout << "Pano size = " << pano.cols << " x " << pano.rows << endl;
-
+    namedWindow("Result Pano", WINDOW_KEEPRATIO | WINDOW_GUI_EXPANDED);
     imshow("Result Pano", pano);
     string fileOut = "/home/vance/output/result_pano_cv_" + to_string(vImages.size()) + "-"
                      + to_string(toStitch.size()) + ".bmp";

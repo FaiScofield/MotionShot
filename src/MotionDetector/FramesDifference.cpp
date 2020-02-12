@@ -43,7 +43,7 @@ Mat FramesDifference::getMotionMask2()
 
         diff.convertTo(diff, CV_8UC1);
 
-        threshold(diff, diff, 25, 255, CV_THRESH_BINARY);
+        threshold(diff, diff, 20, 255, THRESH_BINARY);
 
         filterMask(diff, _structureSize);
 
@@ -85,7 +85,7 @@ Mat FramesDifference::getMotionMask3()
         _diff1 = _diff2.clone();
 
         diff.convertTo(diff, CV_8UC1);
-        threshold(diff, diff, 25, 255, CV_THRESH_BINARY);
+        threshold(diff, diff, 25, 255, THRESH_BINARY);
 
         filterMask(diff, _structureSize);
 

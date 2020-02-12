@@ -12,8 +12,8 @@ void BaseMotionDetector::filterMask(cv::Mat &mask, int size)
     cv::dilate(mask, mask, cv::Mat());  // 膨胀
     cv::dilate(mask, mask, element);
     cv::erode(mask, mask, element);
-    cv::erode(mask, mask, element);
-    cv::dilate(mask, mask, element);
+//    cv::erode(mask, mask, element);
+//    cv::dilate(mask, mask, element);
 }
 
 }

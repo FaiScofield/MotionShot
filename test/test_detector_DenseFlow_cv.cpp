@@ -4,18 +4,14 @@
 ===================================================
 */
 
-#include "BGDifference.h"
-#include "BS_MOG2_CV.h"
-#include "FramesDifference.h"
-#include "ViBePlus.h"
 #include "OpticalFlower.h"
-#include "Vibe.h"
 #include "utility.h"
 #include <boost/filesystem.hpp>
 #include <iostream>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
-#include <opencv2/videoio/videoio.hpp>
+//#include <opencv2/videoio/videoio.hpp>
+#include <opencv2/video/video.hpp>
 
 using namespace cv;
 using namespace std;
@@ -28,12 +24,12 @@ int main(int argc, char* argv[])
         parser(argc, argv,
                "{type      t|VIDEO|value input type: VIDEO, LASISESTA, HUAWEI}"
                "{folder    f| |data folder or video file for type LASISESTA/HUAWEI/VIDEO}"
-               "{detector  d|fd|value detector: bgd, fd, mog2, vibe, vibe+, flow}"
-               "{size      s|5|board size for fd detector}"
+               "{dense     d|true|dense }"
+               "{size      s|5|kernel size for Binary Image}"
                "{showGT    g|false|if show ground for type DATASET}"
                "{scale     c|1|scale to resize image, 0.15 for type HUAWEI}"
                "{flip      p|0|flip image for type VIDEO, 0(x), +(y), -(xy)}"
-               "{rotate    r|-1|rotate image for type VIDEO, r = cv::RotateFlags(0, 1, 2)}"
+               "{rotate    r|-1|rotate image for type VIDEO, r = RotateFlags(0, 1, 2)}"
                "{write     w|false|write result sequence to a dideo}"
                "{help      h|false|show help message}");
 
@@ -43,7 +39,6 @@ int main(int argc, char* argv[])
     }
 
     const String str_type = parser.get<String>("type");
-    const String str_detector = parser.get<String>("detector");
     String str_folder = parser.get<String>("folder");
     if ((*str_folder.end()) == '/')
         str_folder = str_folder.substr(0, str_folder.size() - 1);
@@ -53,7 +48,6 @@ int main(int argc, char* argv[])
     bool showGT = parser.get<bool>("showGT");
     cout << " - type = " << str_type << endl;
     cout << " - folder = " << str_folder << endl;
-    cout << " - detector = " << str_detector << endl;
 
     InputType inputType;
     if (str_type == "video" || str_type == "VIDEO") {
@@ -67,33 +61,6 @@ int main(int argc, char* argv[])
         showGT = false;
     } else {
         cerr << "[Error] Unknown input type for " << str_type << endl;
-        return -1;
-    }
-
-    BaseMotionDetector* detector;
-    if (str_detector == "bgd") {
-        // TODO
-        // detector = dynamic_cast<BaseMotionDetector*>(new BGDiff());
-    } else if (str_detector == "fd") {
-        int size = parser.get<int>("size");
-        cout << " - kernel size = " << size << endl;
-        assert(size > 2);
-        detector = dynamic_cast<BaseMotionDetector*>(new FramesDifference(2, size));
-    } else if (str_detector == "mog2") {
-        Ptr<BackgroundSubtractorMOG2> bs = createBackgroundSubtractorMOG2(500, 100.0, true);
-        detector = dynamic_cast<BaseMotionDetector*>(new BS_MOG2_CV(bs.get()));
-    } else if (str_detector == "flow") {
-        Ptr<FarnebackOpticalFlow> fof = FarnebackOpticalFlow::create();
-        detector = dynamic_cast<BaseMotionDetector*>(new OpticalFlower(fof.get()));
-    } /*else if (str_detector == "vibe") {
-        // TODO
-        detector = dynamic_cast<BaseMotionDetector*>(new ViBe(20, 2, 20, 16));
-    } else if (str_detector == "vibe+") {
-        // TODO
-        detector = dynamic_cast<BaseMotionDetector*>(new ViBePlus(20, 2, 20, 16));
-    }*/
-    else {
-        cerr << "[Error] Unknown input detector for " << str_detector << endl;
         return -1;
     }
 
@@ -115,7 +82,7 @@ int main(int argc, char* argv[])
         Size imgSize = vImages[0].size();
         imgSize.width *= scale;
         imgSize.height *= scale;
-        for (int i = 0; i < N; ++i) {
+        for (size_t i = 0; i < N; ++i) {
             Mat imgi;
             resize(vImages[i], imgi, imgSize);
             vImgResized[i] = imgi;
@@ -126,7 +93,7 @@ int main(int argc, char* argv[])
     if (flip != 0) {
         cout << " - flip = " << flip << endl;
         vector<Mat> vImgFlipped(N);
-        for (int i = 0; i < N; ++i) {
+        for (size_t i = 0; i < N; ++i) {
             Mat imgi;
             cv::flip(vImages[i], imgi, flip);
             vImgFlipped[i] = imgi;
@@ -135,7 +102,7 @@ int main(int argc, char* argv[])
     } else if (rotate >= 0) {
         cout << " - rotate = " << rotate << endl;
         vector<Mat> vImgRotated(N);
-        for (int i = 0; i < N; ++i) {
+        for (size_t i = 0; i < N; ++i) {
             Mat imgi;
             cv::rotate(vImages[i], imgi, rotate);
             vImgRotated[i] = imgi;
@@ -144,20 +111,75 @@ int main(int argc, char* argv[])
     }
 
     /// detect moving frontground
+    bool dense = parser.get<bool>("dense");
+#ifdef USE_OPENCV4
+    Ptr<DISOpticalFlow> detector1 = DISOpticalFlow::create();
+    Ptr<FarnebackOpticalFlow> detector2 = FarnebackOpticalFlow::create();
+#else
+    Ptr<VariationalRefinement> detector1 = VariationalRefinement::create();
+    Ptr<FarnebackOpticalFlow> detector2 = FarnebackOpticalFlow::create();
+#endif
     const bool write = parser.get<bool>("write");
-    VideoWriter writer("/home/vance/output/result.avi", VideoWriter::fourcc('M','J','P','G'), 25,
-                       Size(vImages[0].cols, vImages[0].rows * 2));
+    VideoWriter writer("/home/vance/output/result.avi", VideoWriter::fourcc('M','J','P','G'), 10,
+                       Size(vImages[0].cols * 2, vImages[0].rows * 2));
+
+    int size = parser.get<int>("size");
+    cout << " - kernel size = " << size << endl;
+    const Mat kernel = getStructuringElement(MORPH_RECT, Size(size, size));
+    Mat lastFrame, currentFrame;
     for (size_t i = 0, iend = vImages.size(); i < iend; ++i) {
-        const Mat& frame = vImages[i];
-        Mat diff;
-        detector->apply(frame, diff);
-        if (diff.empty())
+        cvtColor(vImages[i], currentFrame, COLOR_BGR2GRAY);
+        if (i == 0) {
+            currentFrame.copyTo(lastFrame);
             continue;
+        }
+
+        Mat flow1, flow1_uv[2], mag1, ang1, hsv1, hsv_split1[3], bgr1;
+        detector1->calc(lastFrame, currentFrame, flow1); // get flow type CV_32FC2
+        split(flow1, flow1_uv);
+        multiply(flow1_uv[1], -1, flow1_uv[1]);
+        cartToPolar(flow1_uv[0], flow1_uv[1], mag1, ang1, true); // 笛卡尔转极坐标系
+        normalize(mag1, mag1, 0, 1, NORM_MINMAX);
+        hsv_split1[0] = ang1;
+        hsv_split1[1] = mag1;
+        hsv_split1[2] = Mat::ones(ang1.size(), ang1.type());
+        merge(hsv_split1, 3, hsv1);
+        cvtColor(hsv1, bgr1, COLOR_HSV2BGR);    // bgr1 type = CV_32FC3
+        Mat rgbU;
+        bgr1.convertTo(rgbU, CV_8UC3, 255, 0);
+
+        // test
+        Mat mask(bgr1.size(), CV_8UC1, Scalar(255)), grayU;
+        cvtColor(rgbU, grayU, COLOR_BGR2GRAY);
+        mask = mask - grayU;
+        threshold(mask, mask, 30, 255, THRESH_BINARY); // THRESH_OTSU, THRESH_BINARY
+        erode(mask, mask, kernel);
+        dilate(mask, mask, kernel);
+        dilate(mask, mask, kernel);
+        Mat mask_color;
+        cvtColor(mask, mask_color, COLOR_GRAY2BGR);
+//        imshow("DISOpticalFlow", mask);
+
+        /*Farneback*/
+        Mat flow2, flow2_uv[2], mag2, ang2, hsv2, hsv_split2[3], bgr2;
+        detector2->calc(lastFrame, currentFrame, flow2);
+        split(flow2, flow2_uv);
+        multiply(flow2_uv[1], -1, flow2_uv[1]);
+        cartToPolar(flow2_uv[0], flow2_uv[1], mag2, ang2, true);
+        normalize(mag2, mag2, 0, 1, NORM_MINMAX);
+        hsv_split2[0] = ang2;
+        hsv_split2[1] = mag2;
+        hsv_split2[2] = Mat::ones(ang2.size(), ang2.type());
+        merge(hsv_split2, 3, hsv2);
+        cvtColor(hsv2, bgr2, COLOR_HSV2BGR);
+        Mat rgbU2;
+        bgr2.convertTo(rgbU2, CV_8UC3,  255, 0);
+//        imshow("FlowFarneback", rgbU2);
 
         // find contours
-        Mat frame_contours = frame.clone();
+        Mat frame_contours = vImages[i].clone();
         vector<vector<Point>> contours;
-        findContours(diff, contours, RETR_EXTERNAL,
+        findContours(mask, contours, RETR_EXTERNAL,
                      CHAIN_APPROX_TC89_KCOS);  // CHAIN_APPROX_TC89_L1, CHAIN_APPROX_NONE
         drawContours(frame_contours, contours, -1, Scalar(0, 255, 0), 2);
 
@@ -172,12 +194,13 @@ int main(int argc, char* argv[])
                 maxArea = blobi.area();
             blobs.push_back(blobi);
         }
-        cout << " - max blob area: " << maxArea << endl;
+//        cout << " - max blob area: " << maxArea << endl;
 
-        Mat diff_blobs, tmp, output;
-        cvtColor(diff, diff_blobs, COLOR_GRAY2BGR);
+        Mat diff_blobs, tmp3, output;
+        cvtColor(mask, diff_blobs, COLOR_GRAY2BGR);
         for (int i = 0, iend = blobs.size(); i < iend; ++i) {
-            rectangle(diff_blobs, blobs[i], CV_RGB(0, 255, 0), 1);
+            rectangle(diff_blobs, blobs[i], Scalar(0, 255, 0), 1);
+            rectangle(frame_contours, blobs[i], Scalar(0, 0, 255), 1);
             string txt = to_string(i) + "-" + to_string(blobs[i].area());
             putText(diff_blobs, txt, blobs[i].tl(), 1, 1., Scalar(0,0,255));
 
@@ -185,18 +208,28 @@ int main(int argc, char* argv[])
 //            const Point br = blobs[i].br();
 //            mask.rowRange(tl.y, br.y).colRange(tl.x, br.x).setTo(255);
         }
+//        vconcat(frame_contours, diff_blobs, tmp3);
+//        if (showGT && !vGTs.empty())
+//            vconcat(tmp3, vGTs[i], output);
+//        else
+//            output = tmp3;
+//        imshow("result", output);
 
-        vconcat(frame_contours, diff_blobs, tmp);
-        if (showGT && !vGTs.empty())
-            vconcat(tmp, vGTs[i], output);
-        else
-            output = tmp;
+        // show
+        Mat tmp1, tmp2, out;
+        vconcat(frame_contours, diff_blobs, tmp1);
+        vconcat(rgbU, rgbU2, tmp2);
+        hconcat(tmp1, tmp2, out);
+        imshow("result", out);
+//        waitKey(50);
 
-        imshow("result", output);
         if (write)
-            writer.write(output);
+            writer.write(out);
+
         if (waitKey(50) == 27)
             break;
+
+        currentFrame.copyTo(lastFrame);
     }
 
     writer.release();

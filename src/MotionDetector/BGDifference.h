@@ -36,7 +36,7 @@ public:
 
     // 背景差分算法 Background Difference Algorithm
     void BackgroundDiff(cv::Mat src, cv::Mat& imgForeground, cv::Mat& imgBackground, int nFrmNum,
-                        int threshold_method = CV_THRESH_OTSU, double updateSpeed = 0.03);
+                        int threshold_method = cv::THRESH_OTSU, double updateSpeed = 0.03);
 
     // 大津法 OTSU Algorithm
     void Otsu(cv::Mat src, int& thresholdValue, bool ToShowValue = false);

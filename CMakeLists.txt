@@ -40,8 +40,16 @@ else()
 endif()
 
 ## OpenCV
-set(OpenCV_DIR /home/vance/opt/opencv-3.4.1/build)
-find_package(OpenCV REQUIRED)
+set(OpenCV_DIR /home/vance/opt/opencv-4.2.0/build)
+find_package(OpenCV 4)
+if (OpenCV_FOUND)
+    add_definitions(-DUSE_OPENCV4)
+else()
+    set(OpenCV_DIR /home/vance/opt/opencv-3.4.1/build)
+    find_package(OpenCV 3 REQUIRED)
+    add_definitions(-DUSE_OPENCV3)
+endif()
+
 include_directories(${OpenCV_INCLUDE_DIRS})
 if (OpenCV_FOUND)
     message("===> OpenCV Information: Version: ${OpenCV_VERSION}" )

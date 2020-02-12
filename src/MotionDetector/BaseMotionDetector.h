@@ -16,6 +16,9 @@ public:
     // virtual void init();
 
     inline void setStructureSize(int size) { _structureSize = size; }
+    inline int structureSize() const { return _structureSize; }
+    inline void setFirstFrameFlag(bool flag) { _isFirstFrame = flag; }
+    inline bool isFirstFrame() const { return _isFirstFrame; }
 
     void filterMask(cv::Mat& mask, int size = 0);
 
