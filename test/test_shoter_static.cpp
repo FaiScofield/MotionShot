@@ -1,45 +1,114 @@
 #include <iostream>
-#include "ImageStitcher/ImageStitcher.h"
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/photo.hpp>
-#include <opencv2/stitching.hpp>
-#include <opencv2/stitching/detail/warpers.hpp>
+//#include <opencv2/stitching.hpp>
+//#include <opencv2/stitching/detail/warpers.hpp>
 #include <string>
+#include "utility.h"
 
 using namespace std;
 using namespace cv;
-
-const double g_scale = 1.;    // 0.15
+using namespace ms;
 
 int main(int argc, char* argv[])
 {
-    if (argc < 3) {
-        cerr << "Parameters: <image_sequence_folder> <image_count>" << endl;
-        exit(-1);
+    /// parse input arguments
+    CommandLineParser
+        parser(argc, argv,
+               "{type      t|VIDEO|value input type: VIDEO, LASISESTA, HUAWEI}"
+               "{folder    f| |data folder or video file}"
+               "{size      s|5|kernel size for morphology operators}"
+               "{showGT    g|false|if show ground for type DATASET}"
+               "{scale     c|1|scale to resize image, 0.15 for type HUAWEI}"
+               "{flip      p|0|flip image for type VIDEO, 0(x), +(y), -(xy)}"
+               "{rotate    r|-1|rotate image for type VIDEO, r = RotateFlags(0, 1, 2)}"
+               "{write     w|false|write result sequence to a dideo}"
+               "{help      h|false|show help message}");
+
+    if (parser.get<bool>("help")) {
+        parser.printMessage();
+        return 0;
     }
 
-    const string prefix(argv[1]);
-    const int N = atoi(argv[2]);
+    TickMeter timer;
+    timer.start();
 
-    vector<Mat> vImages;
-    vImages.reserve(N);
-    for (int i = 0; i < N; ++i) {
-        string fi = prefix + to_string(i) + ".bmp";    // jpg
-        Mat imgi = imread(fi, IMREAD_COLOR);
-        if (!imgi.empty()) {
-            Mat tmp;
-            resize(imgi, tmp, Size(imgi.cols * g_scale, imgi.rows * g_scale));
-            vImages.push_back(tmp);
-        } else {
-            cerr << "Empty image for " << fi << endl;
+    const String str_type = parser.get<String>("type");
+    String str_folder = parser.get<String>("folder");
+    if ((*str_folder.end()) == '/')
+        str_folder = str_folder.substr(0, str_folder.size() - 1);
+    double scale = parser.get<double>("scale");
+    int flip = parser.get<int>("flip");
+    int rotate = parser.get<int>("rotate");
+    bool showGT = parser.get<bool>("showGT");
+    cout << " - type = " << str_type << endl;
+    cout << " - folder = " << str_folder << endl;
+
+    InputType inputType;
+    if (str_type == "video" || str_type == "VIDEO") {
+        inputType = VIDEO;
+        showGT = false;
+    } else if (str_type == "lasisesta" || str_type == "LASISESTA") {
+        inputType = LASISESTA;
+        cout << " - showGT = " << showGT << endl;
+    } else if (str_type == "huawei" || str_type == "HUAWEI") {
+        inputType = HUAWEI;
+        showGT = false;
+    } else {
+        cerr << "[Error] Unknown input type for " << str_type << endl;
+        return -1;
+    }
+
+    //// read images
+    vector<Mat> vImages, vGTs;
+    if (inputType == LASISESTA) {
+        ReadImageSequence_lasisesta(str_folder, vImages, vGTs);
+    } else if (inputType == HUAWEI) {
+        ReadImageSequence_huawei(str_folder, vImages);
+        // scale = 0.15;
+    } else if (inputType == VIDEO) {
+        ReadImagesFromVideo(str_folder, vImages);
+    }
+    // scale
+    const size_t N = vImages.size();
+    if (abs(scale - 1) > 1e-9) {
+        cout << " - scale = " << scale << endl;
+        vector<Mat> vImgResized(N);
+        Size imgSize = vImages[0].size();
+        imgSize.width *= scale;
+        imgSize.height *= scale;
+        for (size_t i = 0; i < N; ++i) {
+            Mat imgi;
+            resize(vImages[i], imgi, imgSize);
+            vImgResized[i] = imgi;
         }
+        vImages.swap(vImgResized);
     }
-    if (vImages.empty()) {
-        cerr << "Empty folder!" << endl;
-        exit(-1);
+    // flip or rotate
+    if (flip != 0) {
+        cout << " - flip = " << flip << endl;
+        vector<Mat> vImgFlipped(N);
+        for (size_t i = 0; i < N; ++i) {
+            Mat imgi;
+            cv::flip(vImages[i], imgi, flip);
+            vImgFlipped[i] = imgi;
+        }
+        vImages.swap(vImgFlipped);
+    } else if (rotate >= 0) {
+        cout << " - rotate = " << rotate << endl;
+        vector<Mat> vImgRotated(N);
+        for (size_t i = 0; i < N; ++i) {
+            Mat imgi;
+            cv::rotate(vImages[i], imgi, rotate);
+            vImgRotated[i] = imgi;
+        }
+        vImages.swap(vImgRotated);
     }
+    timer.stop();
+    cout << "[Timer] Cost time in reading datas: " << timer.getTimeSec() / timer.getCounter() << endl;
 
+    /// detect moving frontground
     ////////// 1. image stitching
     int M = N > 10 ? N / 2 : N;
     vector<Mat> toStitch;

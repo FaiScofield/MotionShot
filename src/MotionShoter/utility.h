@@ -31,6 +31,10 @@ void ReadImageSequence_huawei(const std::string& folder, std::vector<cv::Mat>& i
 
 void ReadImageSequence_video(const std::string& video, std::vector<cv::Mat>& imgs, int startIndex = 0, int num = -1);
 
+void flowToColor(const cv::Mat& flow, cv::Mat& color);
+
+void drawhistogram(const cv::Mat& src, cv::Mat& hist);
+
 }  // namespace ms
 
 #endif  // UTILITY_HPP

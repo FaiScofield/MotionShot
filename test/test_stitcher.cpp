@@ -177,6 +177,7 @@ int main(int argc, char* argv[])
 //    ImageStitcher* stitcher = new ImageStitcher();
 //    Ptr<Stitcher> stitcher = Stitcher::create(Stitcher::PANORAMA);
     Ptr<Stitcher> stitcher = Stitcher::create(Stitcher::SCANS);
+    // stitcher->setWarper(); //! TODO 投影方式修改
     Stitcher::Status status = stitcher->stitch(toStitch, pano);
     if (status != Stitcher::OK) {
         cerr << "Can't stitch images, error code = " << int(status) << endl;

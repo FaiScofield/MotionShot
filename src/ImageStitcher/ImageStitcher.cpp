@@ -13,9 +13,9 @@ namespace ms
 using namespace std;
 using namespace cv;
 
-ImageStitcher::ImageStitcher() : _featureType(SIFT)
+ImageStitcher::ImageStitcher() : _featureType(SURF)
 {
-    _featureExtractor = cv::xfeatures2d::SIFT::create(200);
+    _featureExtractor = cv::xfeatures2d::SURF::create();
 }
 
 ImageStitcher::ImageStitcher(FeatureType ft) : _featureType(ft)
