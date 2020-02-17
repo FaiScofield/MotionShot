@@ -39,18 +39,18 @@ int main(int argc, char* argv[])
     cout << " - folder = " << str_folder << endl;
     cout << " - blender = " << str_blender << endl;
 
-//    detail::Blender* blender = nullptr;
-//    if (str_blender == "feather") {
-//        blender = dynamic_cast<detail::Blender*>(new detail::FeatherBlender());
-//    } else if (str_blender == "multiband") {
-//        blender = dynamic_cast<detail::Blender*>(new detail::MultiBandBlender());
-//    } else if (str_blender == "poission") {
-//        blender = dynamic_cast<detail::Blender*>(new ms::PoissionBlender()); // TODO
-//    } else {
-//        cerr << "[Error] Unknown blender type for " << str_blender << endl;
-//        exit(-1);
-//    }
-    PoissionBlender* blender = new PoissionBlender();
+    detail::Blender* blender = nullptr;
+    if (str_blender == "feather") {
+        blender = dynamic_cast<detail::Blender*>(new detail::FeatherBlender());
+    } else if (str_blender == "multiband") {
+        blender = dynamic_cast<detail::Blender*>(new detail::MultiBandBlender());
+    } else if (str_blender == "poission") {
+        blender = dynamic_cast<detail::Blender*>(new ms::PoissionBlender()); // TODO
+    } else {
+        cerr << "[Error] Unknown blender type for " << str_blender << endl;
+        exit(-1);
+    }
+//    PoissionBlender* blender = new PoissionBlender();
 
     int start = parser.get<int>("start");
     int end = parser.get<int>("end");
@@ -110,8 +110,9 @@ int main(int argc, char* argv[])
             vValid.push_back(1);
             rectangle(frameOut, blob, Scalar(0, 0, 255), 2);
             imshow("contour & blob", frameOut);
-//            waitKey(0);
+            waitKey(50);
         }
+        destroyAllWindows();
 
 //        overlapRoi();
 
@@ -119,6 +120,10 @@ int main(int argc, char* argv[])
         const Mat pano = vImages[N - N % k].clone();
         Mat foreground = Mat::zeros(pano.size(), CV_8UC3);
         Mat foregroundMask = Mat::zeros(pano.size(), CV_8UC1);
+
+        Rect dis_roi(0, 0, pano.cols, pano.rows);
+        blender->prepare(dis_roi);
+
         for (int j = 0; j < vBlobs.size(); ++j) {
             if (!vValid[j])
                 continue;
@@ -127,24 +132,55 @@ int main(int argc, char* argv[])
             int imgIdx = j * k;
             Mat frame_s, dst_mask;
 
-//            vImages[imgIdx].convertTo(frame_s, CV_16SC3);
-            Point center = (blob.tl() + blob.br()) * 0.5;
-            blender->feed(pano, Mat(), center);
-            blender->blend(vImages[imgIdx], vMasks[imgIdx]);
-            Mat result = blender->getResult();
-            imshow("blend result", result);
+            // PoissionBlender
+////            vImages[imgIdx].convertTo(frame_s, CV_16SC3);
+//            Point center = (blob.tl() + blob.br()) * 0.5;
+//            blender->feed(pano, Mat(), center);
+//            blender->blend(vImages[imgIdx], vMasks[imgIdx]);
+//            Mat result = blender->getResult();
+//            imshow("blend result", result);
+
+            // other blender
+            Mat imgInput;
+            vImages[imgIdx].convertTo(imgInput, CV_16SC3);
+            Mat mask = Mat::zeros(pano.size(), CV_8UC1);
+            mask(blob).setTo(255);
+            imshow("mask", mask);
+            waitKey(30);
+            blender->feed(imgInput, mask, Point(0, 0));  //! TODO  BUG
+
+            Mat panof, maskf;
+            panof = pano.clone();
+            maskf = Mat::ones(pano.size(), CV_8UC1);
+            blender->blend(panof, maskf);
+            imshow("panof", panof);
+            imshow("maskf", maskf);
 
 
-            bitwise_and(foregroundMask, vMasks[imgIdx], foregroundMask);
-            result.rowRange(blob.tl().y, blob.br().y).colRange(blob.tl().x, blob.br().x).
-                    copyTo(foreground.rowRange(blob.tl().y, blob.br().y).colRange(blob.tl().x, blob.br().x));
-            imshow("foreground", foreground);
+            // diff
+//            Mat diffBlob, hist;
+//            absdiff(vImages[imgIdx](blob), pano(blob), diffBlob);
+//            cvtColor(diffBlob, diffBlob, COLOR_BGR2GRAY);
+//            drawhistogram(diffBlob, hist);
+//            imshow("diffBlob", diffBlob);
+//            imshow("hist", hist);
+
+//            bitwise_and(foregroundMask, vMasks[imgIdx], foregroundMask);
+//            result.rowRange(blob.tl().y, blob.br().y).colRange(blob.tl().x, blob.br().x).
+//                    copyTo(foreground.rowRange(blob.tl().y, blob.br().y).colRange(blob.tl().x, blob.br().x));
+//            imshow("foreground", foreground);
 
             waitKey(0);
         }
-        string filename = "/home/vance/output/foreground-d" + to_string(k) + ".jpg";
-        imwrite(filename, foreground);
+
+
+
+//        string filename = "/home/vance/output/foreground-d" + to_string(k) + ".jpg";
+//        imwrite(filename, foreground);
     }
+
+
+
 //    blender->prepare(Rect(0, 0, src.cols, src.rows));
 //    blender->feed(src_s, mask, Point(0, 0));
 //    blender->feed(targ_s, mask, Point(0, 0));
