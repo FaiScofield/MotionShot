@@ -14,9 +14,9 @@ public:
     PoissionBlender() /*: cv::detail::Blender() */ {}
     ~PoissionBlender() {}
 
-    void prepare(const std::vector<cv::Point>& corners, const std::vector<cv::Size>& sizes) {}
+//    void prepare(const std::vector<cv::Point>& corners, const std::vector<cv::Size>& sizes) {}
 
-    void prepare(cv::Rect dst_roi) {}
+//    void prepare(cv::Rect dst_roi) {}
 
     void feed(cv::InputArray img, cv::InputArray mask, cv::Point tl)
     {
@@ -29,6 +29,8 @@ public:
     {
 
         cv::seamlessClone(src_, dst, dst_mask, to_place_, result_, cv::NORMAL_CLONE);
+
+//        cv::detail::Blender::blend(dst, dst_mask);
     }
 
     cv::Mat getResult() const { return result_; }

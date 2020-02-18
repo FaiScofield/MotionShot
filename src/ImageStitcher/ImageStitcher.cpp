@@ -221,6 +221,16 @@ void ImageStitcher::alphaBlend(const Mat& img1, const Mat& img2, const WarpedCor
 //    Rect overlappedArea2(tl2_overlapped, br2_overlapped);
 //    assert(overlappedArea1.area() == overlappedArea2.area());
 
+    //! TODO   distanceTransform
+//    Mat dw1, dw2, dw;
+//    Mat ig1, ig2;
+//    cvtColor(img1(overlappedArea1), ig1, COLOR_BGR2GRAY);
+//    cvtColor(img2(overlappedArea1), ig2, COLOR_BGR2GRAY);
+//    distanceTransform(ig1, dw1, DIST_L2, DIST_MASK_PRECISE, CV_64FC1);
+//    distanceTransform(ig2, dw2, DIST_L2, DIST_MASK_PRECISE, CV_64FC1);
+//    vconcat(dw1, dw2, dw);
+//    imshow("distanceTransform", dw);
+
 
     Mat weight1 = Mat(img2.size(), CV_64FC3, Scalar(1., 1., 1.));
     Mat weight2 = Mat(img2.size(), CV_64FC3, Scalar(1., 1., 1.));
@@ -229,7 +239,7 @@ void ImageStitcher::alphaBlend(const Mat& img1, const Mat& img2, const WarpedCor
         const double alpha = 1. - beta;
         weight1.col(c).setTo(Vec3d(alpha, alpha, alpha));
         weight2.col(c).setTo(Vec3d(beta, beta, beta));
-        // TODO 斜分割线处需要将beta设为0
+        // TODO 斜分割线处需要将beta设为0. distanceTransform()
     }
 
 #if SHOW_RESULTS

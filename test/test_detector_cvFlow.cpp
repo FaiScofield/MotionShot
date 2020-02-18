@@ -50,7 +50,7 @@ int main(int argc, char* argv[])
 
     const String str_type = parser.get<String>("type");
     String str_folder = parser.get<String>("folder");
-    if ((*str_folder.end()) == '/')
+    if (str_folder[str_folder.size() - 1] == '/')
         str_folder = str_folder.substr(0, str_folder.size() - 1);
     double scale = parser.get<double>("scale");
     int flip = parser.get<int>("flip");
@@ -126,9 +126,10 @@ int main(int argc, char* argv[])
     bool dense = parser.get<bool>("dense");
 #ifdef USE_OPENCV4
     Ptr<DISOpticalFlow> detector1 = DISOpticalFlow::create();
-    Ptr<FarnebackOpticalFlow> detector2 = FarnebackOpticalFlow::create();
+    Ptr<VariationalRefinement> detector2 = VariationalRefinement::create();
+//    Ptr<FarnebackOpticalFlow> detector2 = FarnebackOpticalFlow::create();
 #else
-    Ptr<VariationalRefinement> detector1 = VariationalRefinement::create();
+    Ptr<DualTVL1OpticalFlow> detector1 = DualTVL1OpticalFlow::create();
     Ptr<FarnebackOpticalFlow> detector2 = FarnebackOpticalFlow::create();
 #endif
 //    const bool write = parser.get<bool>("write");

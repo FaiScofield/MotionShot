@@ -13,20 +13,6 @@ if(CMAKE_COMPILER_IS_GNUCXX)
 endif()
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wno-deprecated-declarations -Wno-unused-variable")
 
-#set(CMAKE_AUTOMOC ON)
-#set(CMAKE_AUTORCC ON)
-
-#list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/CMakeModules/)
-
-#IF(CMAKE_COMPILER_IS_GNUCXX)
-#    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fno-omit-frame-pointer -O0 -g")
-#    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -fno-omit-frame-pointer -O0 -g")
-#endif()
-
-## Eigen
-# find_package(Eigen REQUIRED)
-# include_directories(${EIGEN_INCLUDE_DIRS})
-# message("===> Eigen Include DIR: ${EIGEN_INCLUDE_DIRS}")
 
 # Boost
 find_package(Boost REQUIRED COMPONENTS filesystem)
@@ -40,7 +26,7 @@ else()
 endif()
 
 ## OpenCV
-set(OpenCV_DIR /home/vance/opt/opencv-4.2.0/build)
+#set(OpenCV_DIR /home/vance/opt/opencv-4.2.0/build)
 find_package(OpenCV 4)
 if (OpenCV_FOUND)
     add_definitions(-DUSE_OPENCV4)
@@ -58,37 +44,6 @@ if (OpenCV_FOUND)
 else()
     message("===> OpenCV Not Found!!!" )
 endif()
-
-# ## G2O
-# find_package(CSparse REQUIRED)
-# include_directories(${CSPARSE_INCLUDE_DIR})
-# if(CSPARSE_FOUND)
-#     message("===> CSparse Information: Include Dir: ${CSPARSE_INCLUDE_DIR}" )
-#     message("===> CSparse Information: Libs Dir: ${CSPARSE_LIBRARY}" )
-# else()
-#     message("===> CSparse Not Found!!!")
-# endif()
-# find_package(Cholmod REQUIRED)
-# include_directories(${CHOLMOD_INCLUDE_DIR})
-# if(CHOLMOD_FOUND)
-#     message("===> Cholmod Information: Include Dir: ${CHOLMOD_INCLUDE_DIR}" )
-#     message("===> Cholmod Information: Libs Dir: ${CHOLMOD_LIBRARIES}" )
-# else()
-#     message("===> Cholmod Not Found!!!")
-# endif()
-# set(G2O_ROOT /home/vance/opt/g2o-20160424/install)
-# find_package(G2O REQUIRED)
-# include_directories(${G2O_INCLUDE_DIR})
-# file(GLOB G2O_LIBS ${G2O_ROOT}/lib/*.so)
-# # list(APPEND G2O_LIBS cxsparse cholmod)
-# if (G2O_FOUND)
-#     message("===> G2O Information: Root: ${G2O_ROOT}")
-#     message("===> G2O Information: Include Dir: ${G2O_INCLUDE_DIR}" )
-#     message("===> G2O Information: Libs Dir: ${G2O_LIBS}" )
-# else()
-#     message("===> G2O Not Found!!!" )
-# endif()
-
 
 include_directories(
     ${PROJECT_SOURCE_DIR}

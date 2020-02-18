@@ -314,32 +314,65 @@ void flowToColor(const Mat& flow, Mat& color)
     }
 }
 
-void drawhistogram(const Mat& src, Mat& histColor)
+void drawhistogram(const Mat& src, Mat& histGray, const Mat& mask, int binSize)
 {
     assert(src.channels() == 1);
+    assert(binSize < 128 && binSize >= 1);
 
     int channels = 0;
-    int histSize = 256;
+    int histSize = 256 / binSize; // 51 / 256
     float range_[] = {0, 256};
     const float* ranges = {range_};
     Mat hist;
-    calcHist(&src, 1, &channels, Mat(), hist, 1, &histSize, &ranges);
-
-    // 创建直方图画布
-    int nHistWidth = 600;
-    int nHistHeight = 400;
-    int nBinWidth = cvRound((double)nHistWidth / histSize);
-    histColor = Mat(nHistHeight, nHistWidth, CV_8UC3, Scalar(255, 255, 255));
+    calcHist(&src, 1, &channels, mask, hist, 1, &histSize, &ranges);
 
     // 直方图归一化
-    normalize(hist, hist, 0.0, histColor.rows, NORM_MINMAX, -1, Mat());
+    normalize(hist, hist, 1.0, 0.0, NORM_MINMAX);
 
     // 在直方图中画出直方图
-    for (int i = 1; i < histSize; i++) {
-        line(histColor, Point(nBinWidth * (i - 1), nHistHeight - cvRound(hist.at<float>(i - 1))),
-             Point(nBinWidth * i, nHistHeight - cvRound(hist.at<float>(i))), Scalar(0, 0, 0), 2, 8, 0);
+    const int boardSize = 5;
+    const int imgSize = 256 + 2 * boardSize;
+    histGray = Mat(imgSize, imgSize, CV_8UC1, Scalar(255));
+    int hpt = static_cast<int>(0.9 * 256);
+    for (int h = 0; h < histSize; h++) {
+        float binVal = hist.at<float>(h);
+        if (binVal > 0) {
+            int intensity = static_cast<int>(binVal * hpt);
+            line(histGray, Point(boardSize + h * binSize, boardSize + 256),
+                 Point(boardSize + h * binSize, boardSize + 256 - intensity), Scalar(0), binSize);
+        }
     }
 }
+
+/**
+ * @brief resultRoi 根据多个输入的图像/ROI区域, 生成一个覆盖了所有图像/ROI子区域的大区域
+ * @param corners   多个图像/ROI区域的左上角坐标
+ * @param images    多个图像对应的尺寸
+ * @param sizes     多个ROI区域对应的尺寸
+ * @return  返回覆盖了所有图像/ROI的大区域
+ */
+Rect resultRoi(const std::vector<Point>& corners, const std::vector<Size>& sizes)
+{
+    CV_Assert(sizes.size() == corners.size());
+    Point tl(std::numeric_limits<int>::max(), std::numeric_limits<int>::max());
+    Point br(std::numeric_limits<int>::min(), std::numeric_limits<int>::min());
+    for (size_t i = 0; i < corners.size(); ++i) {
+        tl.x = std::min(tl.x, corners[i].x);
+        tl.y = std::min(tl.y, corners[i].y);
+        br.x = std::max(br.x, corners[i].x + sizes[i].width);
+        br.y = std::max(br.y, corners[i].y + sizes[i].height);
+    }
+    return Rect(tl, br);
+}
+
+Rect resultRoi(const std::vector<Point>& corners, const std::vector<UMat>& images)
+{
+    std::vector<Size> sizes(images.size());
+    for (size_t i = 0; i < images.size(); ++i)
+        sizes[i] = images[i].size();
+    return resultRoi(corners, sizes);
+}
+
 
 }  // namespace ms
 

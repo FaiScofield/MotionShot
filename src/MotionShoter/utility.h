@@ -27,13 +27,20 @@ void ReadImageSequence(const std::string& prefix, const std::string& suffix,
 void ReadImageSequence_lasisesta(const std::string& folder, std::vector<cv::Mat>& imgs,
                                  std::vector<cv::Mat>& gts, int startIndex = 0, int num = -1);
 
-void ReadImageSequence_huawei(const std::string& folder, std::vector<cv::Mat>& imgs, int startIndex = 0, int num = -1);
+void ReadImageSequence_huawei(const std::string& folder, std::vector<cv::Mat>& imgs,
+                              int startIndex = 0, int num = -1);
 
-void ReadImageSequence_video(const std::string& video, std::vector<cv::Mat>& imgs, int startIndex = 0, int num = -1);
+void ReadImageSequence_video(const std::string& video, std::vector<cv::Mat>& imgs,
+                             int startIndex = 0, int num = -1);
 
 void flowToColor(const cv::Mat& flow, cv::Mat& color);
 
-void drawhistogram(const cv::Mat& src, cv::Mat& hist);
+void drawhistogram(const cv::Mat& src, cv::Mat& hist, const cv::Mat& mask = cv::Mat(), int binSize = 1);
+
+cv::Rect resultRoi(const std::vector<cv::Point>& corners, const std::vector<cv::Size>& sizes);
+
+cv::Rect resultRoi(const std::vector<cv::Point>& corners, const std::vector<cv::UMat>& images);
+
 
 }  // namespace ms
 

@@ -5,12 +5,14 @@
 #include <opencv2/stitching.hpp>
 #include <opencv2/photo.hpp>
 #include "utility.h"
-#include "ImageBlender/PoissionBlender.h"
-
+//#include "ImageBlender/PoissionBlender.h"
+#include "ImageBlender/cvBlenders.h"
 
 using namespace std;
 using namespace cv;
 using namespace ms;
+
+enum BlenderType { NO, FEATHER, MULTI_BAND };
 
 int main(int argc, char* argv[])
 {
@@ -40,13 +42,19 @@ int main(int argc, char* argv[])
     cout << " - blender = " << str_blender << endl;
 
     detail::Blender* blender = nullptr;
+//    ms::cvBlender* blender = nullptr;
+    BlenderType blenderType;
     if (str_blender == "feather") {
         blender = dynamic_cast<detail::Blender*>(new detail::FeatherBlender());
+//        blender = new ms::cvFeatherBlender();
+        blenderType = FEATHER;
     } else if (str_blender == "multiband") {
-        blender = dynamic_cast<detail::Blender*>(new detail::MultiBandBlender());
-    } else if (str_blender == "poission") {
+        blender = dynamic_cast<detail::Blender*>(new detail::MultiBandBlender(false, 2, CV_32F));
+//        blender = new ms::cvMultiBandBlender();
+        blenderType = MULTI_BAND;
+    } /*else if (str_blender == "poission") {
         blender = dynamic_cast<detail::Blender*>(new ms::PoissionBlender()); // TODO
-    } else {
+    }*/ else {
         cerr << "[Error] Unknown blender type for " << str_blender << endl;
         exit(-1);
     }
@@ -86,7 +94,7 @@ int main(int argc, char* argv[])
         vDelta.push_back(delta);
     }
 
-    for (int d = 0; d < vDelta.size(); ++d) {
+    for (size_t d = 0; d < vDelta.size(); ++d) {
         // get blobs
         const int k = vDelta[d];
         vector<Rect> vBlobs;
@@ -110,93 +118,136 @@ int main(int argc, char* argv[])
             vValid.push_back(1);
             rectangle(frameOut, blob, Scalar(0, 0, 255), 2);
             imshow("contour & blob", frameOut);
-            waitKey(50);
+            waitKey(100);
         }
         destroyAllWindows();
 
-//        overlapRoi();
-
-        // blend with blobs
+        /// 前景拼接融合
         const Mat pano = vImages[N - N % k].clone();
-        Mat foreground = Mat::zeros(pano.size(), CV_8UC3);
-        Mat foregroundMask = Mat::zeros(pano.size(), CV_8UC1);
+        Mat panos, panosMask;
+        pano.convertTo(panos, CV_16SC3);
+        panosMask.create(pano.size(), CV_8UC1);
+        panosMask.setTo(255);
 
         Rect dis_roi(0, 0, pano.cols, pano.rows);
-        blender->prepare(dis_roi);
+//        blender->prepare(dis_roi);
+//        vector<Point> corners(vBlobs.size(), Point(0, 0));
+//        vector<Size> sizes(vBlobs.size(), pano.size());;
+//        blender->prepare(corners, sizes);
 
-        for (int j = 0; j < vBlobs.size(); ++j) {
+        Mat foreground_f, foregroundMask, foreground;
+        blender->prepare(dis_roi);
+        vector<Mat> maskWeight;
+        for (size_t j = 0; j < vBlobs.size(); ++j) {
             if (!vValid[j])
                 continue;
 
             const Rect& blob = vBlobs[j];
-            int imgIdx = j * k;
-            Mat frame_s, dst_mask;
+            const int imgIdx = j * k;
 
-            // PoissionBlender
-////            vImages[imgIdx].convertTo(frame_s, CV_16SC3);
-//            Point center = (blob.tl() + blob.br()) * 0.5;
-//            blender->feed(pano, Mat(), center);
-//            blender->blend(vImages[imgIdx], vMasks[imgIdx]);
-//            Mat result = blender->getResult();
-//            imshow("blend result", result);
-
-            // other blender
+            // blender
             Mat imgInput;
             vImages[imgIdx].convertTo(imgInput, CV_16SC3);
-            Mat mask = Mat::zeros(pano.size(), CV_8UC1);
+            Mat mask = Mat::zeros(pano.size(), CV_8U);
             mask(blob).setTo(255);
-            imshow("mask", mask);
-            waitKey(30);
-            blender->feed(imgInput, mask, Point(0, 0));  //! TODO  BUG
 
-            Mat panof, maskf;
-            panof = pano.clone();
-            maskf = Mat::ones(pano.size(), CV_8UC1);
-            blender->blend(panof, maskf);
-            imshow("panof", panof);
-            imshow("maskf", maskf);
+            blender->feed(imgInput, mask, Point(0,0));
+            if (j > 0) {
+                Mat forej, foreMaskj, forejU;
+                blender->blend(forej, foreMaskj);
+                forej.convertTo(forejU, CV_8UC3);
+                imshow("forej", forejU);
 
+                if (j == vBlobs.size() - 1) {
+                    foreground_f = forej.clone();
+                    foregroundMask = foreMaskj.clone();
+                    foreground_f.convertTo(foreground, CV_8UC3);
+                } else {
+                    blender->prepare(dis_roi);
+                    blender->feed(forej, foreMaskj, Point(0,0));
+                }
+            }
 
-            // diff
-//            Mat diffBlob, hist;
-//            absdiff(vImages[imgIdx](blob), pano(blob), diffBlob);
-//            cvtColor(diffBlob, diffBlob, COLOR_BGR2GRAY);
-//            drawhistogram(diffBlob, hist);
-//            imshow("diffBlob", diffBlob);
-//            imshow("hist", hist);
+            //! TODO
+//            Mat mw;
+//            blender->calcMaskWeight(mw);
+//            maskWeight.push_back(mw);
 
-//            bitwise_and(foregroundMask, vMasks[imgIdx], foregroundMask);
-//            result.rowRange(blob.tl().y, blob.br().y).colRange(blob.tl().x, blob.br().x).
-//                    copyTo(foreground.rowRange(blob.tl().y, blob.br().y).colRange(blob.tl().x, blob.br().x));
-//            imshow("foreground", foreground);
-
-            waitKey(0);
+            waitKey(2000);
         }
+        destroyAllWindows();
 
+//        Mat foreground_f, foregroundMask, foreground;
+//        blender->blend(foreground_f, foregroundMask);
+//        // Preliminary result is in CV_16SC3 format, but all values are in [0,255] range,
+//        // so convert it to avoid user confusing
+//        foreground_f.convertTo(foreground, CV_8U);
 
+        Mat tmp1, tmp2;
+        cvtColor(foregroundMask, tmp1, COLOR_GRAY2BGR);
+        hconcat(foreground, tmp1, tmp2);
+        imshow("foreground and mask", tmp2);
+        string mode;
+        if (blenderType == FEATHER)
+            mode = "羽化";
+        else if (blenderType == MULTI_BAND)
+            mode = "多频带";
+        string txt1 = "/home/vance/output/前景时序融合-" + mode + "-" +to_string(k) + ".jpg";
+        imwrite(txt1, foreground);
 
-//        string filename = "/home/vance/output/foreground-d" + to_string(k) + ".jpg";
-//        imwrite(filename, foreground);
+//        /// 前背景融合
+////        ms::cvFeatherBlender* blender2 = new ms::cvFeatherBlender();
+////        ms::cvMultiBandBlender* blender2 = new ms::cvMultiBandBlender(false, 2, CV_32F);
+//        detail::FeatherBlender* blender2 = new detail::FeatherBlender();
+//        BlenderType blenderType2 = FEATHER;
+////        detail::MultiBandBlender* blender2 = new detail::MultiBandBlender(false, 2, CV_32F);
+////        BlenderType blenderType2 = MULTI_BAND;
+//        blender2->prepare(dis_roi);
+//        Mat panoMask(pano.size(), CV_8U);
+//        panoMask.setTo(255);
+//        Mat panof;
+//        pano.convertTo(panof, CV_16SC3);
+//        blender2->feed(panof, panoMask, Point(0,0));
+//        blender2->feed(foreground_f, foregroundMask, Point(0,0));
+//        Mat result, resultMask;
+//        blender2->blend(result, resultMask);
+//        result.convertTo(result, CV_8U);
+//        imshow("blend result", result);
+//        string mode2;
+//        if (blenderType2 == FEATHER)
+//            mode2 = "羽化";
+//        else if (blenderType2 == MULTI_BAND)
+//            mode2 = "多频带";
+//        string txt2 = "/home/vance/output/前背景融合-" + mode + "+" + mode2 + "-" + to_string(k) + ".jpg";
+//        imwrite(txt2, result);
+
+//        // diff
+//        Mat diffFore, hist;
+//        Mat foreGray, panoGray;
+//        cvtColor(foreground, foreGray, COLOR_BGR2GRAY);
+//        cvtColor(pano, panoGray, COLOR_BGR2GRAY);
+////        bitwise_and(panoGray, foregroundMask, panoGray);
+////        absdiff(foreGray, panoGray, diffFore);
+////        drawhistogram(diffFore, hist);
+////        Mat tmpGray, tmp3;
+////        vconcat(foreGray, panoGray, tmpGray);
+////        vconcat(tmpGray, diffFore, tmp3);
+////        imshow("fore and back ground diff", tmp3);
+////        imshow("diffFore hist", hist);
+////        double maxV, minV;
+////        minMaxLoc(diffFore, &minV, &maxV);
+////        cout << "min / max diff value = " << minV << " / " << maxV << endl;
+
+////        Mat panoHist;
+////        drawhistogram(panoGray, panoHist);
+////        imshow("panoHist", panoHist);
+
+//        Mat resultPlus = pano.clone();
+//        resultPlus.setTo(Vec3b(0,0,0), foregroundMask);
+//        resultPlus += foreground;
+//        imshow("resultPlus", resultPlus);
+//        imwrite(string("/home/vance/output/前背景融合-" + mode + "+叠加-" + to_string(k) + ".jpg"), resultPlus);
     }
-
-
-
-//    blender->prepare(Rect(0, 0, src.cols, src.rows));
-//    blender->feed(src_s, mask, Point(0, 0));
-//    blender->feed(targ_s, mask, Point(0, 0));
-//    blender->blend(result_s, result_mask);
-//    Mat result, result2;
-//    result_s.convertTo(result, CV_8U);
-//    result_mask.convertTo(result2, CV_8UC3);
-
-//    Mat result;
-//    // NORMAL_CLONE, MIXED_CLONE, 黑白单色MONOCHROME_TRANSFER
-//    seamlessClone(src, targ, mask, placed, result, NORMAL_CLONE);
-
-//    imshow("source image", src);
-//    imshow("target image", targ);
-//    imshow("blending result", result);
-//    imwrite("/home/vance/output/blending_result.bmp", result);
 
     waitKey(0);
     return 0;
