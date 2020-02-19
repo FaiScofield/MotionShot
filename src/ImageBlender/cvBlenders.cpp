@@ -50,7 +50,7 @@
 
 #define LOGLN(msg) (std::cout << msg << std::endl)
 #define ENABLE_LOG  1
-#define ENABLE_DEBUG_RESULT 1
+#define ENABLE_DEBUG_RESULT 0
 
 #if ENABLE_DEBUG_RESULT
 #include <opencv2/highgui.hpp>
@@ -59,6 +59,7 @@
 namespace ms
 {
 
+using namespace std;
 using namespace cv;
 
 static const float WEIGHT_EPS = 1e-5f;  // 加上微小量防止分母为0
@@ -266,6 +267,7 @@ void cvMultiBandBlender::feed(InputArray _img, InputArray mask, Point tl)
     assert(mask.type() == CV_8U);
 
     // Keep source image in memory with small border
+    // 给输入图像添加一个gap大小的边界, 但不超过dis_roi的范围.
     int gap = 3 * (1 << num_bands_);
     Point tl_new(std::max(dst_roi_.x, tl.x - gap), std::max(dst_roi_.y, tl.y - gap));
     Point br_new(std::min(dst_roi_.br().x, tl.x + img.cols + gap),
@@ -276,6 +278,8 @@ void cvMultiBandBlender::feed(InputArray _img, InputArray mask, Point tl)
     //
     // We do it to avoid interpolation problems when keeping sub-images only. There is no such problem when
     // image is bordered to have size equal to the final image size, but this is too memory hungry approach.
+    //
+    // 根据添加gap后的大小,微调尺寸以便被(1 << num_bands_)整除,这样金字塔之间的比例才能刚好为2.
     tl_new.x = dst_roi_.x + (((tl_new.x - dst_roi_.x) >> num_bands_) << num_bands_);
     tl_new.y = dst_roi_.y + (((tl_new.y - dst_roi_.y) >> num_bands_) << num_bands_);
     int width = br_new.x - tl_new.x;
@@ -298,7 +302,7 @@ void cvMultiBandBlender::feed(InputArray _img, InputArray mask, Point tl)
 
     // Create the source image Laplacian pyramid
     UMat img_with_border;
-    copyMakeBorder(_img, img_with_border, top, bottom, left, right, BORDER_REFLECT);
+    copyMakeBorder(_img, img_with_border, top, bottom, left, right, BORDER_REFLECT); // 生成添加了边界的图像
     LOGLN("  Add border to the source image, time: " << ((getTickCount() - t) / getTickFrequency()) << " sec");
 #if ENABLE_LOG
     t = getTickCount();
@@ -313,7 +317,7 @@ void cvMultiBandBlender::feed(InputArray _img, InputArray mask, Point tl)
     t = getTickCount();
 #endif
 
-    // Create the weight map Gaussian pyramid
+    // Create the weight map Gaussian pyramid. 掩模也要添加相同的边界,并生成金字塔掩模
     UMat weight_map;
     std::vector<UMat> weight_pyr_gauss(num_bands_ + 1);
 
@@ -337,6 +341,7 @@ void cvMultiBandBlender::feed(InputArray _img, InputArray mask, Point tl)
     t = getTickCount();
 #endif
 
+    // 扩边后的img在最终图像上对应的区域
     int y_tl = tl_new.y - dst_roi_.y;
     int y_br = br_new.y - dst_roi_.y;
     int x_tl = tl_new.x - dst_roi_.x;
@@ -346,7 +351,6 @@ void cvMultiBandBlender::feed(InputArray _img, InputArray mask, Point tl)
     for (int i = 0; i <= num_bands_; ++i) {
         Rect rc(x_tl, y_tl, x_br - x_tl, y_br - y_tl);
 
-        //! BUG  rc 没有相应缩小尺度!
         Mat _src_pyr_laplace = src_pyr_laplace[i].getMat(ACCESS_READ);
         Mat _dst_pyr_laplace = dst_pyr_laplace_[i](rc).getMat(ACCESS_RW);
         Mat _weight_pyr_gauss = weight_pyr_gauss[i].getMat(ACCESS_READ);
@@ -380,13 +384,13 @@ void cvMultiBandBlender::feed(InputArray _img, InputArray mask, Point tl)
                 }
             }
         }
+
+        // 更新一下到下一层的对应区域
+        x_tl /= 2;
+        y_tl /= 2;
+        x_br /= 2;
+        y_br /= 2;
     }
-
-    x_tl /= 2;
-    y_tl /= 2;
-    x_br /= 2;
-    y_br /= 2;
-
 
     LOGLN("  Add weighted layer of the source image to the final Laplacian pyramid layer, time: "
           << ((getTickCount() - t) / getTickFrequency()) << " sec");
@@ -464,13 +468,15 @@ void normalizeUsingWeightMap(InputArray _weight, InputOutputArray _src)
 void createWeightMap(InputArray mask, float sharpness, InputOutputArray weight)
 {
     assert(mask.type() == CV_8U);
-    distanceTransform(mask, weight, DIST_L1, 3);
+    distanceTransform(mask, weight, DIST_L1, 3, CV_8UC1);
 
 #if ENABLE_DEBUG_RESULT
-    Mat w;
+    cout << mask.type() << mask.size() << endl;
+    cout << weight.type() << weight.size() << endl;
+    Mat wu, w;
+
     hconcat(mask, weight, w);
     imshow("mask & weight", w);
-    waitKey(0);
 #endif
 
     UMat tmp;
@@ -481,7 +487,7 @@ void createWeightMap(InputArray mask, float sharpness, InputOutputArray weight)
     Mat w2;
     hconcat(tmp, weight, w2);
     imshow("weight * sharpness & threshold weight", w2);
-    waitKey(0);
+    waitKey(30);
 #endif
 }
 
@@ -526,7 +532,7 @@ void createLaplacePyr(InputArray img, int num_levels, std::vector<UMat>& pyr)
         UMat tmp;
         for (int i = 0; i < num_levels; ++i) {
             pyrUp(pyr[i + 1], tmp, pyr[i].size());
-            subtract(pyr[i], tmp, pyr[i]);
+            subtract(pyr[i], tmp, pyr[i]);  // 即 pyr[i] -= tmp
         }
     }
 }

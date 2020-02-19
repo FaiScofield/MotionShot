@@ -33,7 +33,12 @@ void ReadImageSequence_huawei(const std::string& folder, std::vector<cv::Mat>& i
 void ReadImageSequence_video(const std::string& video, std::vector<cv::Mat>& imgs,
                              int startIndex = 0, int num = -1);
 
+// 输入图像的缩放,翻转和旋转. 主要是输入视频可能不正.
+void resizeFlipRotateImages(std::vector<cv::Mat>& imgs, double scale, int flip, int rotate);
+
 void flowToColor(const cv::Mat& flow, cv::Mat& color);
+
+void showFlow(const cv::Mat& flow, cv::Mat& color);
 
 void drawhistogram(const cv::Mat& src, cv::Mat& hist, const cv::Mat& mask = cv::Mat(), int binSize = 1);
 
@@ -41,6 +46,7 @@ cv::Rect resultRoi(const std::vector<cv::Point>& corners, const std::vector<cv::
 
 cv::Rect resultRoi(const std::vector<cv::Point>& corners, const std::vector<cv::UMat>& images);
 
+void shrinkRoi(const cv::Mat& src, cv::Mat& dst, int size);
 
 }  // namespace ms
 

@@ -49,8 +49,8 @@ int main(int argc, char* argv[])
 //        blender = new ms::cvFeatherBlender();
         blenderType = FEATHER;
     } else if (str_blender == "multiband") {
-        blender = dynamic_cast<detail::Blender*>(new detail::MultiBandBlender(false, 2, CV_32F));
-//        blender = new ms::cvMultiBandBlender();
+        blender = dynamic_cast<detail::Blender*>(new detail::MultiBandBlender(false, 3, CV_32F));
+//        blender = new ms::cvMultiBandBlender(false, 5, CV_32F);
         blenderType = MULTI_BAND;
     } /*else if (str_blender == "poission") {
         blender = dynamic_cast<detail::Blender*>(new ms::PoissionBlender()); // TODO
@@ -135,7 +135,7 @@ int main(int argc, char* argv[])
 //        vector<Size> sizes(vBlobs.size(), pano.size());;
 //        blender->prepare(corners, sizes);
 
-        Mat foreground_f, foregroundMask, foreground;
+//        Mat foreground_f, foregroundMask, foreground;
         blender->prepare(dis_roi);
         vector<Mat> maskWeight;
         for (size_t j = 0; j < vBlobs.size(); ++j) {
@@ -152,21 +152,21 @@ int main(int argc, char* argv[])
             mask(blob).setTo(255);
 
             blender->feed(imgInput, mask, Point(0,0));
-            if (j > 0) {
-                Mat forej, foreMaskj, forejU;
-                blender->blend(forej, foreMaskj);
-                forej.convertTo(forejU, CV_8UC3);
-                imshow("forej", forejU);
+//            if (j > 0) {
+//                Mat forej, foreMaskj, forejU;
+//                blender->blend(forej, foreMaskj);
+//                forej.convertTo(forejU, CV_8UC3);
+//                imshow("forej", forejU);
 
-                if (j == vBlobs.size() - 1) {
-                    foreground_f = forej.clone();
-                    foregroundMask = foreMaskj.clone();
-                    foreground_f.convertTo(foreground, CV_8UC3);
-                } else {
-                    blender->prepare(dis_roi);
-                    blender->feed(forej, foreMaskj, Point(0,0));
-                }
-            }
+//                if (j == vBlobs.size() - 1) {
+//                    foreground_f = forej.clone();
+//                    foregroundMask = foreMaskj.clone();
+//                    foreground_f.convertTo(foreground, CV_8UC3);
+//                } else {
+//                    blender->prepare(dis_roi);
+//                    blender->feed(forej, foreMaskj, Point(0,0));
+//                }
+//            }
 
             //! TODO
 //            Mat mw;
@@ -175,13 +175,14 @@ int main(int argc, char* argv[])
 
             waitKey(2000);
         }
+        waitKey(0);
         destroyAllWindows();
 
-//        Mat foreground_f, foregroundMask, foreground;
-//        blender->blend(foreground_f, foregroundMask);
-//        // Preliminary result is in CV_16SC3 format, but all values are in [0,255] range,
-//        // so convert it to avoid user confusing
-//        foreground_f.convertTo(foreground, CV_8U);
+        Mat foreground_f, foregroundMask, foreground;
+        blender->blend(foreground_f, foregroundMask);
+        // Preliminary result is in CV_16SC3 format, but all values are in [0,255] range,
+        // so convert it to avoid user confusing
+        foreground_f.convertTo(foreground, CV_8U);
 
         Mat tmp1, tmp2;
         cvtColor(foregroundMask, tmp1, COLOR_GRAY2BGR);
@@ -194,59 +195,50 @@ int main(int argc, char* argv[])
             mode = "多频带";
         string txt1 = "/home/vance/output/前景时序融合-" + mode + "-" +to_string(k) + ".jpg";
         imwrite(txt1, foreground);
+//        waitKey(0);
 
 //        /// 前背景融合
-////        ms::cvFeatherBlender* blender2 = new ms::cvFeatherBlender();
-////        ms::cvMultiBandBlender* blender2 = new ms::cvMultiBandBlender(false, 2, CV_32F);
+        //! TODO 把pano和前景对应的mask区域的稍微缩收/扩张, 设置具体的权重值, 然后再融合. (不能用羽化, 羽化不能自定义权重)
+        //! 目前看多频段的效果还不如羽化!
 //        detail::FeatherBlender* blender2 = new detail::FeatherBlender();
 //        BlenderType blenderType2 = FEATHER;
-////        detail::MultiBandBlender* blender2 = new detail::MultiBandBlender(false, 2, CV_32F);
-////        BlenderType blenderType2 = MULTI_BAND;
-//        blender2->prepare(dis_roi);
-//        Mat panoMask(pano.size(), CV_8U);
-//        panoMask.setTo(255);
-//        Mat panof;
-//        pano.convertTo(panof, CV_16SC3);
-//        blender2->feed(panof, panoMask, Point(0,0));
-//        blender2->feed(foreground_f, foregroundMask, Point(0,0));
-//        Mat result, resultMask;
-//        blender2->blend(result, resultMask);
-//        result.convertTo(result, CV_8U);
-//        imshow("blend result", result);
-//        string mode2;
-//        if (blenderType2 == FEATHER)
-//            mode2 = "羽化";
-//        else if (blenderType2 == MULTI_BAND)
-//            mode2 = "多频带";
-//        string txt2 = "/home/vance/output/前背景融合-" + mode + "+" + mode2 + "-" + to_string(k) + ".jpg";
-//        imwrite(txt2, result);
+//        ms::cvMultiBandBlender* blender2 = new ms::cvMultiBandBlender(false, 3, CV_32F);
+        detail::MultiBandBlender* blender2 = new detail::MultiBandBlender(false, 5, CV_32F);
+        BlenderType blenderType2 = MULTI_BAND;
+        blender2->prepare(dis_roi);
 
-//        // diff
-//        Mat diffFore, hist;
-//        Mat foreGray, panoGray;
-//        cvtColor(foreground, foreGray, COLOR_BGR2GRAY);
-//        cvtColor(pano, panoGray, COLOR_BGR2GRAY);
-////        bitwise_and(panoGray, foregroundMask, panoGray);
-////        absdiff(foreGray, panoGray, diffFore);
-////        drawhistogram(diffFore, hist);
-////        Mat tmpGray, tmp3;
-////        vconcat(foreGray, panoGray, tmpGray);
-////        vconcat(tmpGray, diffFore, tmp3);
-////        imshow("fore and back ground diff", tmp3);
-////        imshow("diffFore hist", hist);
-////        double maxV, minV;
-////        minMaxLoc(diffFore, &minV, &maxV);
-////        cout << "min / max diff value = " << minV << " / " << maxV << endl;
+        Mat noWeightMaskFore, backgroundMast;
+        const Mat kernel = getStructuringElement(MORPH_RECT, Size(20, 20));
+        erode(foregroundMask, noWeightMaskFore, kernel, Point(-1,-1), 1, BORDER_CONSTANT);
+        bitwise_not(foregroundMask, backgroundMast);
+        Mat distance, distanceU, weightArea, weightAreaValue;
+        bitwise_xor(foregroundMask, noWeightMaskFore, weightArea);
+        distanceTransform(foregroundMask, distance, DIST_C, 3);
+        distance.convertTo(distanceU, CV_8UC1); // 32FC1
+        bitwise_and(distanceU, weightArea, weightAreaValue);
+        normalize(weightAreaValue, weightAreaValue, 0, 255, NORM_MINMAX);
+        Mat foregroundMask_final, backgroundMast_final;
+        add(noWeightMaskFore, weightAreaValue, foregroundMask_final);
+        bitwise_not(foregroundMask_final, backgroundMast_final);
+        Mat maskFinal;
+        hconcat(foregroundMask_final, backgroundMast_final, maskFinal);
+        imshow("final foreground / background mask", maskFinal);
 
-////        Mat panoHist;
-////        drawhistogram(panoGray, panoHist);
-////        imshow("panoHist", panoHist);
-
-//        Mat resultPlus = pano.clone();
-//        resultPlus.setTo(Vec3b(0,0,0), foregroundMask);
-//        resultPlus += foreground;
-//        imshow("resultPlus", resultPlus);
-//        imwrite(string("/home/vance/output/前背景融合-" + mode + "+叠加-" + to_string(k) + ".jpg"), resultPlus);
+        Mat panof;
+        pano.convertTo(panof, CV_16SC3);
+        blender2->feed(panof, backgroundMast_final, Point(0,0));
+        blender2->feed(foreground_f, foregroundMask_final, Point(0,0));
+        Mat result, resultMask;
+        blender2->blend(result, resultMask);
+        result.convertTo(result, CV_8U);
+        imshow("blend result", result);
+        string mode2;
+        if (blenderType2 == FEATHER)
+            mode2 = "羽化";
+        else if (blenderType2 == MULTI_BAND)
+            mode2 = "多频带";
+        string txt2 = "/home/vance/output/前背景融合-" + mode + "+" + mode2 + "-" + to_string(k) + ".jpg";
+        imwrite(txt2, result);
     }
 
     waitKey(0);

@@ -230,6 +230,49 @@ void ReadImageSequence_video(const string& video, vector<Mat>& imgs, int startIn
     cout << "[Info ] Get " << imgs.size() << " images from tatal (from video)." << endl;
 }
 
+void resizeFlipRotateImages(vector<Mat>& imgs, double scale, int flip, int rotate)
+{
+    assert(!imgs.empty());
+
+    vector<Mat>& vImages = imgs;
+
+    // scale
+    const size_t N = vImages.size();
+    if (abs(scale - 1) > 1e-9) {
+        cout << " - scale = " << scale << endl;
+        vector<Mat> vImgResized(N);
+        Size imgSize = vImages[0].size();
+        imgSize.width *= scale;
+        imgSize.height *= scale;
+        for (size_t i = 0; i < N; ++i) {
+            Mat imgi;
+            resize(vImages[i], imgi, imgSize);
+            vImgResized[i] = imgi;
+        }
+        vImages.swap(vImgResized);
+    }
+
+    // flip or rotate
+    if (flip != 0) {
+        cout << " - flip = " << flip << endl;
+        vector<Mat> vImgFlipped(N);
+        for (size_t i = 0; i < N; ++i) {
+            Mat imgi;
+            cv::flip(vImages[i], imgi, flip);
+            vImgFlipped[i] = imgi;
+        }
+        vImages.swap(vImgFlipped);
+    } else if (rotate >= 0) {
+        cout << " - rotate = " << rotate << endl;
+        vector<Mat> vImgRotated(N);
+        for (size_t i = 0; i < N; ++i) {
+            Mat imgi;
+            cv::rotate(vImages[i], imgi, rotate);
+            vImgRotated[i] = imgi;
+        }
+        vImages.swap(vImgRotated);
+    }
+}
 
 void makeColorWheel(vector<Scalar>& colorwheel)
 {
@@ -314,6 +357,22 @@ void flowToColor(const Mat& flow, Mat& color)
     }
 }
 
+void showFlow(const cv::Mat& flow, cv::Mat& color)
+{
+    Mat flow_uv[2], mag, ang, hsv, hsv_split[3], bgr;
+    split(flow, flow_uv);
+    multiply(flow_uv[1], -1, flow_uv[1]);
+    cartToPolar(flow_uv[0], flow_uv[1], mag, ang, true); // 笛卡尔转极坐标系
+    normalize(mag, mag, 0, 1, NORM_MINMAX);
+    hsv_split[0] = ang;
+    hsv_split[1] = mag;
+    hsv_split[2] = Mat::ones(ang.size(), ang.type());
+    merge(hsv_split, 3, hsv);
+    cvtColor(hsv, bgr, COLOR_HSV2BGR);    // bgr1 type = CV_32FC3
+    bgr.convertTo(color, CV_8UC3, 255, 0);
+}
+
+
 void drawhistogram(const Mat& src, Mat& histGray, const Mat& mask, int binSize)
 {
     assert(src.channels() == 1);
@@ -371,6 +430,22 @@ Rect resultRoi(const std::vector<Point>& corners, const std::vector<UMat>& image
     for (size_t i = 0; i < images.size(); ++i)
         sizes[i] = images[i].size();
     return resultRoi(corners, sizes);
+}
+
+void shrinkRoi(const cv::Mat& src, cv::Mat& dst, int size)
+{
+    assert(src.type() == CV_8UC1);
+
+//    imshow("origin mask", src);
+
+//    Mat tmp1, tmp2;
+//    cvtColor(src, tmp1, COLOR_GRAY2BGR);
+
+    Mat kernel = getStructuringElement(MORPH_RECT, Size(size, size));
+    erode(src, dst, kernel, Point(-1,-1), 1, BORDER_CONSTANT);
+//    imshow("mask shrink", dst);
+
+//    waitKey(0);
 }
 
 

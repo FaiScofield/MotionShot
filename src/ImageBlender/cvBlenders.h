@@ -91,7 +91,8 @@ protected:
     Rect dst_roi_;
 };
 
-/** @brief 羽化融合
+/**
+ * @brief   羽化融合
  * 最简单的加权平均, 权值由cv::distanceTransform()决定, 图片添加顺序不影响最终效果!
  */
 class cvFeatherBlender : public cvBlender
@@ -119,7 +120,11 @@ private:
 
 
 /**
- * @brief 多频段融合
+ * @brief   多频段融合
+ * 利用拉普拉斯金字塔进行多频段融合. 拉普拉斯金字塔是通过源图像减去先缩小后再放大的图像(即图像缩小后丢失的那一部分信息)
+ * $$ L_{i}=G_{i}-\operatorname{PyrUp}\left(G_{i+1}\right) $$
+ *
+ * @note    mask的元素值的大小也是权重的大小, 可以不用简单的0/255区分.
  * @see @cite OpenCV @ref BA83
  */
 class cvMultiBandBlender : public cvBlender

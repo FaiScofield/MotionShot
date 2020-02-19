@@ -32,6 +32,12 @@ MotionTracker::~MotionTracker()
         delete _substractor;
 }
 
+void MotionTracker::setPano(const Mat &pano)
+{
+    _pano = pano.clone();
+    cvtColor(pano, _panoGray, COLOR_BGR2GRAY);
+}
+
 void MotionTracker::substractBackground(const Mat& input, Mat& mask)
 {
     _currentFrame = input.clone();

@@ -22,7 +22,7 @@ public:
 
     void filterMask(cv::Mat& mask, int size = 0);
 
-    virtual void apply(const cv::Mat& input, cv::Mat& mask) {}
+    virtual void apply(const cv::Mat& input, cv::Mat& mask){}
 
 private:
     bool _isFirstFrame;

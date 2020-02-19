@@ -107,39 +107,7 @@ int main(int argc, char* argv[])
         cerr << "Too less imagesinput!" << endl;
         exit(-1);
     }
-
-    // scale
-    if (abs(scale - 1) > 1e-9) {
-        vector<Mat> vImgResized(num);
-        Size imgSize = vImages[0].size();
-        imgSize.width *= scale;
-        imgSize.height *= scale;
-        for (int i = 0; i < num; ++i) {
-            Mat imgi;
-            resize(vImages[i], imgi, imgSize);
-            vImgResized[i] = imgi;
-        }
-        vImages.swap(vImgResized);
-    }
-
-    // flip or rotate
-    if (flip != 0) {
-        vector<Mat> vImgRotated(num);
-        for (int i = 0; i < num; ++i) {
-            Mat imgi;
-            cv::flip(vImages[i], imgi, flip);
-            vImgRotated[i] = imgi;
-        }
-        vImages.swap(vImgRotated);
-    } else if (rotate >= 0) {
-        vector<Mat> vImgRotated(num);
-        for (int i = 0; i < num; ++i) {
-            Mat imgi;
-            cv::rotate(vImages[i], imgi, rotate);
-            vImgRotated[i] = imgi;
-        }
-        vImages.swap(vImgRotated);
-    }
+    resizeFlipRotateImages(vImages, scale, flip, rotate);
 
     // toStitch
     image1 = vImages.front();

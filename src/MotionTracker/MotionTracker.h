@@ -23,6 +23,8 @@ public:
     std::vector<cv::Rect> getBlobs() const { return _blobs; }
     std::list<MovingObject> getObjects() const { return _objects; }
 
+    void setPano(const cv::Mat& pano);
+
     void substractBackground(const cv::Mat& input, cv::Mat& mask);
     void detectBlocks();
     void matchObject(float minDist = 30);
@@ -50,6 +52,7 @@ private:
     std::list<MovingObject> _objects;
     std::vector<cv::Rect> _blobs;
 
+    cv::Mat _pano, _panoGray;
     cv::Mat _lastFrame, _lastFrameGray, _lastForeground;
     cv::Mat _currentFrame, _currentFrameGray, _currentForeground;
     cv::Mat _currentBlobImage, _currentContoursImage;

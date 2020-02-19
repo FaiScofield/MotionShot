@@ -17,8 +17,7 @@
 
 #define USE_CAMSHIT     0
 #define USE_MEANSHIT    0
-#define USE_DIS_DETECTOR    1
-#define BLNED_IMAGE     1
+#define BLNED_IMAGE     0
 
 using namespace cv;
 using namespace std;
@@ -63,7 +62,7 @@ int main(int argc, char* argv[])
     if (str_type == "video" || str_type == "VIDEO") {
         inputType = VIDEO;
         showGT = false;
-    } else if (str_type == "lasisesta" || str_type == "LASISESTA") {
+    } else if (str_type == "lasiesta" || str_type == "LASIESTA") {
         inputType = LASISESTA;
         cout << " - showGT = " << showGT << endl;
     } else if (str_type == "huawei" || str_type == "HUAWEI") {
@@ -84,43 +83,34 @@ int main(int argc, char* argv[])
     } else if (inputType == VIDEO) {
         ReadImagesFromVideo(str_folder, vImages);
     }
-    // scale
-    const size_t N = vImages.size();
-    if (abs(scale - 1) > 1e-9) {
-        cout << " - scale = " << scale << endl;
-        vector<Mat> vImgResized(N);
-        Size imgSize = vImages[0].size();
-        imgSize.width *= scale;
-        imgSize.height *= scale;
-        for (size_t i = 0; i < N; ++i) {
-            Mat imgi;
-            resize(vImages[i], imgi, imgSize);
-            vImgResized[i] = imgi;
-        }
-        vImages.swap(vImgResized);
-    }
-    // flip or rotate
-    if (flip != 0) {
-        cout << " - flip = " << flip << endl;
-        vector<Mat> vImgFlipped(N);
-        for (size_t i = 0; i < N; ++i) {
-            Mat imgi;
-            cv::flip(vImages[i], imgi, flip);
-            vImgFlipped[i] = imgi;
-        }
-        vImages.swap(vImgFlipped);
-    } else if (rotate >= 0) {
-        cout << " - rotate = " << rotate << endl;
-        vector<Mat> vImgRotated(N);
-        for (size_t i = 0; i < N; ++i) {
-            Mat imgi;
-            cv::rotate(vImages[i], imgi, rotate);
-            vImgRotated[i] = imgi;
-        }
-        vImages.swap(vImgRotated);
-    }
+    resizeFlipRotateImages(vImages, scale, flip, rotate);
     timer.stop();
     cout << "[Timer] Cost time in reading datas: " << timer.getTimeSec() / timer.getCounter() << endl;
+
+    /// get pano
+//    timer.start();
+
+//    vector<Mat> toStitch(5);
+//    const int delta = vImages.size() / 5;
+//    for (int i = 0; i < 5; ++i)
+//        toStitch[i] = vImages[i * delta];
+
+//    Mat pano;
+//    Ptr<Stitcher> stitcher = Stitcher::create(Stitcher::SCANS);
+//    Stitcher::Status status = stitcher->stitch(toStitch, pano);
+//    if (status != Stitcher::OK) {
+//        cerr << "Can't stitch images, error code = " << int(status) << endl;
+//        system("pause");
+//        return -1;
+//    }
+//    timer.stop();
+//    double time = timer.getTimeSec() / timer.getCounter();
+//    cout << " - Time cost in stitching = " << time << "s" << endl;
+//    cout << " - Image size = " << vImages[0].size() << endl;
+//    cout << " - Pano size = " << pano.size()  << endl;
+    const Mat pano = vImages.back();
+    Mat panoGray;
+    cvtColor(pano, panoGray, COLOR_BGR2GRAY);
 
     /// detect moving frontground
     bool dense = parser.get<bool>("dense");
@@ -140,8 +130,9 @@ int main(int argc, char* argv[])
     cout << " - kernel size = " << size << endl;
     const Mat kernel = getStructuringElement(MORPH_RECT, Size(size, size));
     Mat lastFrame, currentFrame;
-    vector<vector<Rect>> vBlobs;
-    vBlobs.reserve(N - 1);
+    vector<vector<Rect>> vBlobs1, vBlobs2;
+    vBlobs1.reserve(vImages.size() - 1);
+    vBlobs2.reserve(vImages.size() - 1);
     double t1 = 0, t2 = 0;
     for (size_t i = 0, iend = vImages.size(); i < iend; ++i) {
         cvtColor(vImages[i], currentFrame, COLOR_BGR2GRAY);
@@ -150,9 +141,10 @@ int main(int argc, char* argv[])
             continue;
         }
 
+        /* detector1 method */
         timer.start();
         Mat flow1, flow1_uv[2], mag1, ang1, hsv1, hsv_split1[3], bgr1;
-        detector1->calc(lastFrame, currentFrame, flow1); // get flow type CV_32FC2
+        detector1->calc(/*lastFrame*/panoGray, currentFrame, flow1); // get flow type CV_32FC2
         split(flow1, flow1_uv);
         multiply(flow1_uv[1], -1, flow1_uv[1]);
         cartToPolar(flow1_uv[0], flow1_uv[1], mag1, ang1, true); // 笛卡尔转极坐标系
@@ -167,10 +159,45 @@ int main(int argc, char* argv[])
         timer.stop();
         t1 += timer.getTimeSec() / timer.getCounter();
 
-        /*Farneback*/
+        // 二值化
+        Mat mask1(bgr1.size(), CV_8UC1, Scalar(255)), grayU1;
+        cvtColor(rgbU, grayU1, COLOR_BGR2GRAY);
+        mask1 = mask1 - grayU1;
+        threshold(mask1, mask1, 20, 255, THRESH_BINARY); // THRESH_OTSU, THRESH_BINARY
+        erode(mask1, mask1, kernel);
+        dilate(mask1, mask1, kernel);
+        dilate(mask1, mask1, kernel);
+
+        // find contours
+        Mat outContours1 = vImages[i].clone();
+        vector<vector<Point>> contours1;
+        findContours(mask1, contours1, RETR_EXTERNAL,
+                     CHAIN_APPROX_TC89_KCOS);  // CHAIN_APPROX_TC89_L1, CHAIN_APPROX_NONE
+        drawContours(outContours1, contours1, -1, Scalar(0, 255, 0), 2);
+
+        // calculate blobs
+        vector<Rect> blobs1;
+        const auto th = 0.5 * currentFrame.size().area();
+        for (int i = 0, iend = contours1.size(); i < iend; ++i) {
+            Rect blobi = boundingRect(contours1[i]);
+            if (blobi.area() > th) // 删去太大的前景
+                continue;
+            blobs1.push_back(blobi);
+        }
+        vBlobs1.push_back(blobs1);
+
+        for (int i = 0, iend = blobs1.size(); i < iend; ++i) {
+            rectangle(outContours1, blobs1[i], Scalar(0, 0, 255), 1);
+            string txt = to_string(i) + "-" + to_string(blobs1[i].area());
+            putText(outContours1, txt, blobs1[i].tl(), 1, 1., Scalar(0,0,255));
+        }
+
+        //! TODO 利用前景运动的连续性做约束去除无效的前景
+
+        /* detector2 method */
         timer.start();
         Mat flow2, flow2_uv[2], mag2, ang2, hsv2, hsv_split2[3], bgr2;
-        detector2->calc(lastFrame, currentFrame, flow2);
+        detector2->calc(/*lastFrame*/panoGray, currentFrame, flow2);
         split(flow2, flow2_uv);
         multiply(flow2_uv[1], -1, flow2_uv[1]);
         cartToPolar(flow2_uv[0], flow2_uv[1], mag2, ang2, true);
@@ -184,72 +211,51 @@ int main(int argc, char* argv[])
         bgr2.convertTo(rgbU2, CV_8UC3,  255, 0);
         timer.stop();
         t2 += timer.getTimeSec() / timer.getCounter();
-//        imshow("FlowFarneback", rgbU2);
 
+        // 二值化
+        Mat mask2(bgr2.size(), CV_8UC1, Scalar(255)), grayU2;
+        cvtColor(rgbU2, grayU2, COLOR_BGR2GRAY);
+        mask2 = mask2 - grayU2;
+        threshold(mask2, mask2, 20, 255, THRESH_BINARY); // THRESH_OTSU, THRESH_BINARY
+        erode(mask2, mask2, kernel);
+        dilate(mask2, mask2, kernel);
+        dilate(mask2, mask2, kernel);
 
-        // TODO 利用前景运动的连续性做约束去除无效的前景
-#if USE_DIS_DETECTOR
-        Mat mask(bgr1.size(), CV_8UC1, Scalar(255)), grayU;
-#else
-        Mat mask(bgr2.size(), CV_8UC1, Scalar(255)), grayU;
-#endif
-        cvtColor(rgbU, grayU, COLOR_BGR2GRAY);
-        mask = mask - grayU;
-        threshold(mask, mask, 10, 255, THRESH_BINARY); // THRESH_OTSU, THRESH_BINARY
-        erode(mask, mask, kernel);
-        dilate(mask, mask, kernel);
-        dilate(mask, mask, kernel);
-        Mat mask_color;
-        cvtColor(mask, mask_color, COLOR_GRAY2BGR);
-//        imshow("DISOpticalFlow", mask);
+        // find contours
+        Mat outContours2 = vImages[i].clone();
+        vector<vector<Point>> contours2;
+        findContours(mask2, contours2, RETR_EXTERNAL,
+                     CHAIN_APPROX_TC89_KCOS);  // CHAIN_APPROX_TC89_L1, CHAIN_APPROX_NONE
+        drawContours(outContours2, contours2, -1, Scalar(0, 255, 0), 2);
+
+        // calculate blobs
+        vector<Rect> blobs2;
+        for (int i = 0, iend = contours2.size(); i < iend; ++i) {
+            Rect blobi = boundingRect(contours2[i]);
+            if (blobi.area() > th) // 删去太大的前景
+                continue;
+            blobs2.push_back(blobi);
+        }
+        vBlobs2.push_back(blobs2);
+
+        for (int i = 0, iend = blobs2.size(); i < iend; ++i) {
+            rectangle(outContours2, blobs2[i], Scalar(0, 0, 255), 1);
+            string txt = to_string(i) + "-" + to_string(blobs2[i].area());
+            putText(outContours2, txt, blobs2[i].tl(), 1, 1., Scalar(0,0,255));
+        }
 
         // show hist
 //        Mat hist;
 //        drawhistogram(grayU, hist);
 //        imshow("histogram", hist);
 
-        // find contours
-        Mat frame_contours = vImages[i].clone();
-        vector<vector<Point>> contours;
-        findContours(mask, contours, RETR_EXTERNAL,
-                     CHAIN_APPROX_TC89_KCOS);  // CHAIN_APPROX_TC89_L1, CHAIN_APPROX_NONE
-        drawContours(frame_contours, contours, -1, Scalar(0, 255, 0), 2);
-
-        // calculate blobs
-        vector<Rect> blobs;
-        int maxArea = 0;
-        for (int i = 0, iend = contours.size(); i < iend; ++i) {
-            Rect blobi = boundingRect(contours[i]);
-            if (blobi.area() > 50000)
-                continue;
-            if (blobi.area() > maxArea)
-                maxArea = blobi.area();
-            blobs.push_back(blobi);
-        }
-        vBlobs.push_back(blobs);
-//        cout << " - max blob area: " << maxArea << endl;
-
-        Mat diff_blobs, tmp3, output;
-        cvtColor(mask, diff_blobs, COLOR_GRAY2BGR);
-        for (int i = 0, iend = blobs.size(); i < iend; ++i) {
-            rectangle(diff_blobs, blobs[i], Scalar(0, 255, 0), 1);
-            rectangle(frame_contours, blobs[i], Scalar(0, 0, 255), 1);
-            string txt = to_string(i) + "-" + to_string(blobs[i].area());
-            putText(diff_blobs, txt, blobs[i].tl(), 1, 1., Scalar(0,0,255));
-
-            const Point tl = blobs[i].tl();
-            const Point br = blobs[i].br();
-            mask.rowRange(tl.y, br.y).colRange(tl.x, br.x).setTo(255);
-        }
-
         // show
         Mat tmp1, tmp2, out;
-        vconcat(frame_contours, diff_blobs, tmp1);
+        vconcat(outContours1, outContours2, tmp1);
         vconcat(rgbU, rgbU2, tmp2);
         hconcat(tmp1, tmp2, out);
         putText(out, to_string(i), Point(20, 20), 1, 2., Scalar(0,0,255));
         imshow("result", out);
-        waitKey(50);
 
 //        if (write)
 //            writer.write(out);
@@ -350,7 +356,7 @@ int main(int argc, char* argv[])
 
 
     /// get foregrounds
-    assert(vBlobs.size() == N - 1);
+    assert(vBlobs1.size() == N - 1);
 
     timer.start();
     int delta = 20;
@@ -375,7 +381,7 @@ int main(int argc, char* argv[])
         vImageIndex.push_back(i);
 
         Mat mask = Mat::zeros(vImages[i].size(), CV_8UC1);
-        vector<Rect> blobs = vBlobs[i - 1];
+        vector<Rect> blobs = vBlobs1[i - 1];
         for (int j = 0, iend = blobs.size(); j < iend; ++j) {
             const Point tl = blobs[j].tl();
             const Point br = blobs[j].br();
@@ -413,10 +419,10 @@ int main(int argc, char* argv[])
 //        imshow("img_warped & pano", tmp);
 
         Mat fi;
-        if (vBlobs[idx - 1].empty())
+        if (vBlobs1[idx - 1].empty())
             continue;
-        const Point tl = vBlobs[idx - 1][0].tl();
-        const Point br = vBlobs[idx - 1][0].br();
+        const Point tl = vBlobs1[idx - 1][0].tl();
+        const Point br = vBlobs1[idx - 1][0].br();
         Point p = (tl + br) * 0.5;
         if (p.x < 10 || p.y < 10 || p.x > pano.cols - 10 || p.y > pano.rows - 10)
             continue;

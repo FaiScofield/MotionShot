@@ -7,8 +7,8 @@
 #include "BGDifference.h"
 #include "BS_MOG2_CV.h"
 #include "FramesDifference.h"
-#include "ViBePlus.h"
 #include "OpticalFlower.h"
+#include "ViBePlus.h"
 #include "Vibe.h"
 #include "utility.h"
 #include <boost/filesystem.hpp>
@@ -17,6 +17,8 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/videoio/videoio.hpp>
 
+#define WATERSHED 1
+
 using namespace cv;
 using namespace std;
 using namespace ms;
@@ -24,8 +26,7 @@ using namespace ms;
 int main(int argc, char* argv[])
 {
     /// parse input arguments
-    CommandLineParser
-        parser(argc, argv,
+    CommandLineParser parser(argc, argv,
                "{type      t|VIDEO|value input type: VIDEO, LASISESTA, HUAWEI}"
                "{folder    f| |data folder or video file for type LASISESTA/HUAWEI/VIDEO}"
                "{detector  d|fd|value detector: bgd, fd, mog2, vibe, vibe+, flow}"
@@ -37,7 +38,7 @@ int main(int argc, char* argv[])
                "{write     w|false|write result sequence to a dideo}"
                "{help      h|false|show help message}");
 
-    if (parser.get<bool>("help")) {
+    if (argc < 2 || parser.get<bool>("help")) {
         parser.printMessage();
         return 0;
     }
@@ -103,53 +104,21 @@ int main(int argc, char* argv[])
         ReadImageSequence_lasisesta(str_folder, vImages, vGTs);
     } else if (inputType == HUAWEI) {
         ReadImageSequence_huawei(str_folder, vImages);
-        // scale = 0.15;
+         scale = 0.15;
     } else if (inputType == VIDEO) {
         ReadImagesFromVideo(str_folder, vImages);
+        scale = 0.4;
     }
-    // scale
-    const size_t N = vImages.size();
-    if (abs(scale - 1) > 1e-9) {
-        cout << " - scale = " << scale << endl;
-        vector<Mat> vImgResized(N);
-        Size imgSize = vImages[0].size();
-        imgSize.width *= scale;
-        imgSize.height *= scale;
-        for (int i = 0; i < N; ++i) {
-            Mat imgi;
-            resize(vImages[i], imgi, imgSize);
-            vImgResized[i] = imgi;
-        }
-        vImages.swap(vImgResized);
-    }
-    // flip or rotate
-    if (flip != 0) {
-        cout << " - flip = " << flip << endl;
-        vector<Mat> vImgFlipped(N);
-        for (int i = 0; i < N; ++i) {
-            Mat imgi;
-            cv::flip(vImages[i], imgi, flip);
-            vImgFlipped[i] = imgi;
-        }
-        vImages.swap(vImgFlipped);
-    } else if (rotate >= 0) {
-        cout << " - rotate = " << rotate << endl;
-        vector<Mat> vImgRotated(N);
-        for (int i = 0; i < N; ++i) {
-            Mat imgi;
-            cv::rotate(vImages[i], imgi, rotate);
-            vImgRotated[i] = imgi;
-        }
-        vImages.swap(vImgRotated);
-    }
+    resizeFlipRotateImages(vImages, scale, flip, rotate);
 
     /// detect moving frontground
     const bool write = parser.get<bool>("write");
-    VideoWriter writer("/home/vance/output/result.avi", VideoWriter::fourcc('M','J','P','G'), 25,
+    VideoWriter writer("/home/vance/output/result.avi", VideoWriter::fourcc('M', 'J', 'P', 'G'), 25,
                        Size(vImages[0].cols, vImages[0].rows * 2));
     for (size_t i = 0, iend = vImages.size(); i < iend; ++i) {
         const Mat& frame = vImages[i];
-        Mat diff;
+        Mat diff, frameGray;
+        cvtColor(frame, frameGray, COLOR_BGR2GRAY);
         detector->apply(frame, diff);
         if (diff.empty())
             continue;
@@ -157,17 +126,63 @@ int main(int argc, char* argv[])
         // find contours
         Mat frame_contours = frame.clone();
         vector<vector<Point>> contours;
+#if WATERSHED
+        vector<Vec4i> hierarchy;
+        findContours(diff, contours, hierarchy, RETR_CCOMP, CHAIN_APPROX_SIMPLE);
+        if (contours.empty())
+            continue;
+
+        Mat markers = Mat::zeros(frame.size(), CV_32S);
+        int idx = 0, compCount = 0;
+        for (; idx >= 0; idx = hierarchy[idx][0], compCount++)
+            drawContours(markers, contours, idx, Scalar::all(compCount + 1), -1, 8, hierarchy, INT_MAX);
+        if (compCount == 0)
+            continue;
+
+        vector<Vec3b> colorTab;
+        for (int j = 0; j < compCount; j++) {
+            int b = theRNG().uniform(0, 255);
+            int g = theRNG().uniform(0, 255);
+            int r = theRNG().uniform(0, 255);
+
+            colorTab.push_back(Vec3b((uchar)b, (uchar)g, (uchar)r));
+        }
+
+        watershed(frame, markers);
+
+        // paint the watershed image
+        Mat wshed(markers.size(), CV_8UC3);
+        for (int i = 0; i < markers.rows; i++) {
+            for (int j = 0; j < markers.cols; j++) {
+                int index = markers.at<int>(i, j);
+                if (index == -1)
+                    wshed.at<Vec3b>(i, j) = Vec3b(255, 255, 255);
+                else if (index <= 0 || index > compCount)
+                    wshed.at<Vec3b>(i, j) = Vec3b(0, 0, 0);
+                else
+                    wshed.at<Vec3b>(i, j) = colorTab[index - 1];
+            }
+        }
+
+        wshed = wshed * 0.5 + frame * 0.5;
+        imshow("watershed transform", wshed);
+//        waitKey(0);
+#else
         findContours(diff, contours, RETR_EXTERNAL,
                      CHAIN_APPROX_TC89_KCOS);  // CHAIN_APPROX_TC89_L1, CHAIN_APPROX_NONE
+        if (contours.empty())
+            continue;
+
         drawContours(frame_contours, contours, -1, Scalar(0, 255, 0), 2);
+#endif
 
         // calculate blobs
         vector<Rect> blobs;
         int maxArea = 0;
         for (int i = 0, iend = contours.size(); i < iend; ++i) {
             Rect blobi = boundingRect(contours[i]);
-//            if (blobi.area() < 10000)
-//                continue;
+            //            if (blobi.area() < 10000)
+            //                continue;
             if (blobi.area() > maxArea)
                 maxArea = blobi.area();
             blobs.push_back(blobi);
@@ -179,11 +194,11 @@ int main(int argc, char* argv[])
         for (int i = 0, iend = blobs.size(); i < iend; ++i) {
             rectangle(diff_blobs, blobs[i], CV_RGB(0, 255, 0), 1);
             string txt = to_string(i) + "-" + to_string(blobs[i].area());
-            putText(diff_blobs, txt, blobs[i].tl(), 1, 1., Scalar(0,0,255));
+            putText(diff_blobs, txt, blobs[i].tl(), 1, 1., Scalar(0, 0, 255));
 
-//            const Point tl = blobs[i].tl();
-//            const Point br = blobs[i].br();
-//            mask.rowRange(tl.y, br.y).colRange(tl.x, br.x).setTo(255);
+            //            const Point tl = blobs[i].tl();
+            //            const Point br = blobs[i].br();
+            //            mask.rowRange(tl.y, br.y).colRange(tl.x, br.x).setTo(255);
         }
 
         vconcat(frame_contours, diff_blobs, tmp);
@@ -195,7 +210,7 @@ int main(int argc, char* argv[])
         imshow("result", output);
         if (write)
             writer.write(output);
-        if (waitKey(50) == 27)
+        if (waitKey(0) == 27)
             break;
     }
 

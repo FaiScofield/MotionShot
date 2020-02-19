@@ -12,14 +12,18 @@ class OpticalFlower : public BaseMotionDetector
 {
 public:
     OpticalFlower();
-    OpticalFlower(cv::DenseOpticalFlow* dof): denseFlow_(dof) {}
+    OpticalFlower(cv::DenseOpticalFlow* dof): _denseFlow(dof) {}
+
+    void setCompareToPano(const cv::Mat& pano);
 
     void apply(const cv::Mat& img, cv::Mat& mask);
 
 private:
-    cv::DenseOpticalFlow* denseFlow_;
-    cv::Mat imgLast_, imgCurr;
+    cv::DenseOpticalFlow* _denseFlow;
+    cv::Mat _imgLast, _imgCurr, _flow;
 
+    bool _compareToPano = false;
+    cv::Mat _pano, _panoGray;
 };
 
 }  // namespace ms

@@ -70,41 +70,7 @@ int main(int argc, char* argv[])
     } else if (inputType == VIDEO) {
         ReadImagesFromVideo(str_folder, vImages);
     }
-    // scale
-    const size_t N = vImages.size();
-    if (abs(scale - 1) > 1e-9) {
-        cout << " - scale = " << scale << endl;
-        vector<Mat> vImgResized(N);
-        Size imgSize = vImages[0].size();
-        imgSize.width *= scale;
-        imgSize.height *= scale;
-        for (size_t i = 0; i < N; ++i) {
-            Mat imgi;
-            resize(vImages[i], imgi, imgSize);
-            vImgResized[i] = imgi;
-        }
-        vImages.swap(vImgResized);
-    }
-    // flip or rotate
-    if (flip != 0) {
-        cout << " - flip = " << flip << endl;
-        vector<Mat> vImgFlipped(N);
-        for (size_t i = 0; i < N; ++i) {
-            Mat imgi;
-            cv::flip(vImages[i], imgi, flip);
-            vImgFlipped[i] = imgi;
-        }
-        vImages.swap(vImgFlipped);
-    } else if (rotate >= 0) {
-        cout << " - rotate = " << rotate << endl;
-        vector<Mat> vImgRotated(N);
-        for (size_t i = 0; i < N; ++i) {
-            Mat imgi;
-            cv::rotate(vImages[i], imgi, rotate);
-            vImgRotated[i] = imgi;
-        }
-        vImages.swap(vImgRotated);
-    }
+    resizeFlipRotateImages(vImages, scale, flip, rotate);
     timer.stop();
     cout << "[Timer] Cost time in reading datas: " << timer.getTimeSec() / timer.getCounter() << endl;
 
