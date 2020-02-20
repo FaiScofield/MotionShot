@@ -8,6 +8,8 @@
 #include <opencv2/video/video.hpp>
 #include <opencv2/stitching.hpp>
 #include <boost/filesystem.hpp>
+#include <opencv2/tracking.hpp>
+//#include <opencv2/gpu/gpu.hpp>  // gpu::calcOpticalFlowBM()
 
 using namespace std;
 using namespace cv;
@@ -97,31 +99,44 @@ int main(int argc, char *argv[])
     cout << " - Pano size = " << pano.size()  << endl;
 
     imshow("pano", pano);
-    waitKey(0);
+    waitKey(1000);
+
+    OpticalFlower* optFlower = new OpticalFlower();
+    for (size_t i = 0, iend = vImages.size(); i < iend; ++i) {
+        const Mat& frame = vImages[i];
+        Mat mask, weight, tmp;
+        optFlower->apply(frame, mask);
+        if (mask.empty())
+            continue;
+        weight = optFlower->getWeightMask();
+        hconcat(mask, weight, tmp);
+        imshow("mask & weight", tmp);
+        waitKey(30);
+    }
 
     /// track
-    auto bs = createBackgroundSubtractorMOG2(500, 100, false);
-    new OpticalFlower();
-    BS_MOG2_CV be(bs.get());
-    MotionTracker tracker;
-    tracker.setBackgroundSubtractor(dynamic_cast<BaseMotionDetector*>(&be));
-//    tracker.SetBackgroundSubtractor(dynamic_cast<BaseBackgroundSubtractor*>(&fd));
-    tracker.setMinBlobSize(Size(5, 5));
-    tracker.setPano(pano);
+//    auto bs = createBackgroundSubtractorMOG2(500, 100, false);
+//    new OpticalFlower();
+//    BS_MOG2_CV be(bs.get());
+//    MotionTracker tracker;
+//    tracker.setBackgroundSubtractor(dynamic_cast<BaseMotionDetector*>(&be));
+////    tracker.SetBackgroundSubtractor(dynamic_cast<BaseBackgroundSubtractor*>(&fd));
+//    tracker.setMinBlobSize(Size(5, 5));
+//    tracker.setPano(pano);
 
-    Mat frame, gray, mask, mask_gt, output;
-    for (size_t i = 0, iend = vImages.size(); i < iend; ++i) {
-        Mat& frame = vImages[i];
+//    Mat frame, gray, mask, mask_gt, output;
+//    for (size_t i = 0, iend = vImages.size(); i < iend; ++i) {
+//        Mat& frame = vImages[i];
 
-        tracker.substractBackground(frame, mask);
-        tracker.detectBlocks();
-        tracker.matchObject();
-        tracker.displayObjects("Objects");
-        tracker.displayDetail("Details");
+//        tracker.substractBackground(frame, mask);
+//        tracker.detectBlocks();
+//        tracker.matchObject();
+//        tracker.displayObjects("Objects");
+//        tracker.displayDetail("Details");
 
-        if (waitKey(300) == 27)
-            break;
-    }
+//        if (waitKey(300) == 27)
+//            break;
+//    }
 
 
     destroyAllWindows();

@@ -144,7 +144,7 @@ int main(int argc, char* argv[])
         /* detector1 method */
         timer.start();
         Mat flow1, flow1_uv[2], mag1, ang1, hsv1, hsv_split1[3], bgr1;
-        detector1->calc(/*lastFrame*/panoGray, currentFrame, flow1); // get flow type CV_32FC2
+        detector1->calc(lastFrame/*panoGray*/, currentFrame, flow1); // get flow type CV_32FC2
         split(flow1, flow1_uv);
         multiply(flow1_uv[1], -1, flow1_uv[1]);
         cartToPolar(flow1_uv[0], flow1_uv[1], mag1, ang1, true); // 笛卡尔转极坐标系

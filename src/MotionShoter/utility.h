@@ -8,6 +8,11 @@
 namespace ms
 {
 
+#define INFO(msg) (std::cout << "[INFO ] " << msg << std::endl)
+#define TIMER(msg) (std::cout << "[TIMER] " << msg << std::endl)
+#define WARNING(msg) (std::cerr << "[WARNI] " << msg << std::endl)
+#define ERROR(msg) (std::cerr << "[ERROR] " << msg << std::endl)
+
 enum InputType {
     VIDEO,      // 视频序列
     LASISESTA,  // LASISESTA数据集

@@ -83,10 +83,10 @@ int main(int argc, char* argv[])
     } else if (str_detector == "mog2") {
         Ptr<BackgroundSubtractorMOG2> bs = createBackgroundSubtractorMOG2(500, 100.0, true);
         detector = dynamic_cast<BaseMotionDetector*>(new BS_MOG2_CV(bs.get()));
-    } else if (str_detector == "flow") {
+    }/* else if (str_detector == "flow") {
         Ptr<FarnebackOpticalFlow> fof = FarnebackOpticalFlow::create();
         detector = dynamic_cast<BaseMotionDetector*>(new OpticalFlower(fof.get()));
-    } /*else if (str_detector == "vibe") {
+    }*/ /*else if (str_detector == "vibe") {
         // TODO
         detector = dynamic_cast<BaseMotionDetector*>(new ViBe(20, 2, 20, 16));
     } else if (str_detector == "vibe+") {
