@@ -30,7 +30,7 @@ int main(int argc, char* argv[])
         "{rotate    r|-1|rotate image for type VIDEO, r = cv::RotateFlags(0, 1, 2)}"
         "{help      h|false|show help message}");
 
-    if (parser.get<bool>("help")) {
+    if (argc < 2 || parser.get<bool>("help")) {
         parser.printMessage();
         return 0;
     }

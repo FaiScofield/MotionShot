@@ -1,16 +1,18 @@
 #include "utility.h"
 #include <iostream>
+#include <map>
+#include <set>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/photo.hpp>
-#include <opencv2/stitching.hpp>
+//#include <opencv2/stitching.hpp>
 //#include "ImageBlender/PoissionBlender.h"
 #include "ImageBlender/cvBlenders.h"
 #include "MotionDetector/OpticalFlower.h"
 
 
-#define USE_FLOW_WEIGHT 1
+#define USE_FLOW_WEIGHT 0
 
 using namespace std;
 using namespace cv;
@@ -46,16 +48,16 @@ int main(int argc, char* argv[])
     cout << " - folder = " << str_folder << endl;
     cout << " - blender = " << str_blender << endl;
 
-    detail::Blender* blender = nullptr;
-    //    ms::cvBlender* blender = nullptr;
+//    detail::Blender* blender = nullptr;
+        ms::cvBlender* blender = nullptr;
     BlenderType blenderType;
     if (str_blender == "feather") {
-        blender = dynamic_cast<detail::Blender*>(new detail::FeatherBlender());
-        //        blender = new ms::cvFeatherBlender();
+//        blender = dynamic_cast<detail::Blender*>(new detail::FeatherBlender());
+        blender = new ms::cvFeatherBlender(0.1, false);
         blenderType = FEATHER;
     } else if (str_blender == "multiband") {
-        blender = dynamic_cast<detail::Blender*>(new detail::MultiBandBlender(false, 3, CV_32F));
-        //        blender = new ms::cvMultiBandBlender(false, 5, CV_32F);
+//        blender = dynamic_cast<detail::Blender*>(new detail::MultiBandBlender(false, 3, CV_32F));
+        blender = new ms::cvMultiBandBlender(false, 5, CV_32F);
         blenderType = MULTI_BAND;
     } /*else if (str_blender == "poission") {
         blender = dynamic_cast<detail::Blender*>(new ms::PoissionBlender()); // TODO
@@ -98,23 +100,19 @@ int main(int argc, char* argv[])
     int maxFores = 8, minFores = 3;  // 前景最多存在8个, 最少3个
     vector<Mat> vImgsToProcess;
     vector<int> vIdxToProcess;
-    vector<vector<int>> vvIdxPerIter;
 
     if (delta == 0) {
         if (maxFores > N) {
             cout << "输入图片数(" << N << ")少于最大前景数(" << maxFores << "), 全部处理." << endl;
             maxFores = static_cast<int>(N);
-            vvIdxPerIter.resize(1);
             vImgsToProcess = vImages;
             vIdxToProcess.resize(N);
             for (int i = 0; i < N; ++i)
                 vIdxToProcess[i] = i;
-            vvIdxPerIter[0] = vIdxToProcess;
         } else {
             cout << "输入图片数(" << N << ")大于最大前景数(" << maxFores << "), 筛选处理中..." << endl;
             set<int> sIdxToProcess;
 
-            vvIdxPerIter.reserve(maxFores - minFores);
             for (int k = minFores; k <= maxFores; ++k) {
                 int d = N / k;
                 int idx = 0;
@@ -129,8 +127,6 @@ int main(int argc, char* argv[])
                     idx += d;
                 }
                 cout << endl;
-
-                vvIdxPerIter.push_back(vIdxThisIter);
             }
 
             vIdxToProcess = vector<int>(sIdxToProcess.begin(), sIdxToProcess.end());
@@ -151,11 +147,14 @@ int main(int argc, char* argv[])
         vIdxToProcess.reserve(k);
         vImgsToProcess.reserve(k);
         int idx = 0;
+        cout << "所有要处理的帧序号是: ";
         while (idx < N) {
+            cout << idx << ", ";
             vIdxToProcess.push_back(idx);
             vImgsToProcess.push_back(vImages[idx]);
             idx += delta;
         }
+        cout << "总数 = " << vIdxToProcess.size() << endl;
     }
 
     timer.stop();
@@ -169,7 +168,10 @@ int main(int argc, char* argv[])
     cout << "计算光流中, 需要一段时间... " << endl;
     OpticalFlower* optFlower = new OpticalFlower;
     vector<Mat> vFlows;
+    std::map<int, Mat> mFlows;
     optFlower->apply(vImgsToProcess, vFlows);
+    for (size_t i = 0; i < vFlows.size(); ++i)
+        mFlows.emplace(vIdxToProcess[i], vFlows[i]);
 
     timer.stop();
     TIMER("光流计算耗时(s): " << timer.getTimeSec() / timer.getCounter());
@@ -185,7 +187,6 @@ int main(int argc, char* argv[])
         for (int i = 0; i < k; ++i) {
             const int imgIdx = i * delta;
             auto it = find(vIdxToProcess.begin(), vIdxToProcess.end(), imgIdx);
-            int processIdx = std::distance(vIdxToProcess.begin(), it);
 
             vector<vector<Point>> contours;
             findContours(vMasks[imgIdx], contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
@@ -203,7 +204,7 @@ int main(int argc, char* argv[])
             rectangle(frameOut, blob, Scalar(0, 0, 255), 2);
             imshow("contour & blob", frameOut);
 
-//            waitKey(200);
+            waitKey(200);
         }
         destroyAllWindows();
 
@@ -211,7 +212,6 @@ int main(int argc, char* argv[])
         const Mat pano = vImgsToProcess.back().clone();
         const Rect dis_roi(0, 0, pano.cols, pano.rows);
         blender->prepare(dis_roi);
-        vector<Mat> maskWeight;
         for (size_t j = 0; j < vBlobs.size(); ++j) {
             if (!vValid[j])
                 continue;
@@ -225,43 +225,35 @@ int main(int argc, char* argv[])
             Mat mask = Mat::zeros(pano.size(), CV_8UC1);
             mask(blob).setTo(255);
 
+            Mat tmp1, tmp2;
+            cvtColor(mask, tmp1, COLOR_GRAY2BGR);
+            hconcat(vImages[imgIdx], tmp1, tmp2);
+            imshow("imgInput & mask", tmp2);
+
+
 #if USE_FLOW_WEIGHT
             Mat tmp, tmp2;
-            hconcat(mask, vFlows[imgIdx], tmp);
+            hconcat(mask, mFlows[imgIdx], tmp);
             imshow("mask & flowmask", tmp);
 
-            Mat maskPlusFlow1, maskPlusFlow2;
-            bitwise_and(vFlows[imgIdx], mask, maskPlusFlow1);
+            Mat maskPlusFlow1, maskPlusFlow2, thMask1, thMask2;
+            bitwise_and(mFlows[imgIdx], mask, maskPlusFlow1);
             normalize(maskPlusFlow1, maskPlusFlow2, 0, 255, NORM_MINMAX);
-            threshold(maskPlusFlow2, maskPlusFlow2, 200, 255, THRESH_BINARY);
+            threshold(maskPlusFlow2, thMask1, 80, 255, THRESH_BINARY);
+            bitwise_not(thMask1, thMask2);
+            bitwise_and(maskPlusFlow2, thMask2, maskPlusFlow2);
+            add(thMask1, maskPlusFlow2, maskPlusFlow2);
             hconcat(maskPlusFlow1, maskPlusFlow2, tmp2);
-            imshow("maskPlusFlow1", tmp2);
+            imshow("Enhenced maskFlow weight", tmp2);
+            string txt = "EnhencedMaskFlow-" + to_string(j) + ".jpg";
+            imwrite(txt, tmp2);
+            waitKey(1000);
 
             blender->feed(imgInput, maskPlusFlow2, Point(0, 0));
 #else
             blender->feed(imgInput, mask, Point(0, 0));
 #endif
-
-            //            if (j > 0) {
-            //                Mat forej, foreMaskj, forejU;
-            //                blender->blend(forej, foreMaskj);
-            //                forej.convertTo(forejU, CV_8UC3);
-            //                imshow("forej", forejU);
-
-            //                if (j == vBlobs.size() - 1) {
-            //                    foreground_f = forej.clone();
-            //                    foregroundMask = foreMaskj.clone();
-            //                    foreground_f.convertTo(foreground, CV_8UC3);
-            //                } else {
-            //                    blender->prepare(dis_roi);
-            //                    blender->feed(forej, foreMaskj, Point(0,0));
-            //                }
-            //            }
-
-            //! TODO
-            //            maskWeight.push_back(vFlows[imgIdx]);
-
-//            waitKey(2000);
+            waitKey(200);
         }
 //        waitKey(0);
         destroyAllWindows();
@@ -272,25 +264,25 @@ int main(int argc, char* argv[])
         // so convert it to avoid user confusing
         foreground_f.convertTo(foreground, CV_8U);
 
-        //        Mat tmp1, tmp2;
-        //        cvtColor(foregroundMask, tmp1, COLOR_GRAY2BGR);
-        //        hconcat(foreground, tmp1, tmp2);
-        //        imshow("foreground and mask", tmp2);
-        //        string txt1 = "/home/vance/output/前景融合-" + strMode1 + "-" +to_string(k) +
-        //        ".jpg"; imwrite(txt1, foreground); waitKey(0);
+        Mat tmp1, tmp2;
+        cvtColor(foregroundMask, tmp1, COLOR_GRAY2BGR);
+        hconcat(foreground, tmp1, tmp2);
+        imshow("foreground and mask", tmp2);
+        string txt1 = "/home/vance/output/前景融合-" + strMode1 + "-" +to_string(k) + ".jpg";
+        imwrite(txt1, foreground);
+        waitKey(0);
 
         // 3.前背景融合
         //! TODO 把pano和前景对应的mask区域的稍微缩收/扩张, 设置具体的权重值, 然后再融合.
         //! (不能用羽化, 羽化不能自定义权重) 目前看多频段的效果还不如羽化!
-        detail::FeatherBlender* blender2 = new detail::FeatherBlender();
+//        detail::FeatherBlender* blender2 = new detail::FeatherBlender();
         BlenderType blenderType2 = FEATHER;
-        // ms::cvMultiBandBlender* blender2 = new ms::cvMultiBandBlender(false, 3, CV_32F);
-//        detail::MultiBandBlender* blender2 = new detail::MultiBandBlender(false, 5,
-//        CV_32F); BlenderType blenderType2 = MULTI_BAND;
+        ms::cvFeatherBlender* blender2 = new ms::cvFeatherBlender();
+
         blender2->prepare(dis_roi);
 
         Mat noWeightMaskFore, backgroundMast;
-        const Mat kernel = getStructuringElement(MORPH_RECT, Size(20, 20));
+        const Mat kernel = getStructuringElement(MORPH_RECT, Size(10, 10));
         erode(foregroundMask, noWeightMaskFore, kernel, Point(-1, -1), 1, BORDER_CONSTANT);
         bitwise_not(foregroundMask, backgroundMast);
         Mat distance, distanceU, weightArea, weightAreaValue;

@@ -49,7 +49,7 @@
 #include <iostream>
 
 #define LOGLN(msg) (std::cout << msg << std::endl)
-#define ENABLE_LOG  1
+#define ENABLE_LOG  0
 #define ENABLE_DEBUG_RESULT 0
 
 #if ENABLE_DEBUG_RESULT
@@ -63,7 +63,6 @@ using namespace std;
 using namespace cv;
 
 static const float WEIGHT_EPS = 1e-5f;  // 加上微小量防止分母为0
-
 
 
 Ptr<cvBlender> cvBlender::createDefault(int type, bool try_gpu)
@@ -147,7 +146,15 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
     assert(mask.type() == CV_8U);
 
     // 根据掩模距0元素的距离创建权重掩模, @ref cv::distanceTransform()
-    createWeightMap(mask, sharpness_, weight_map_);
+    if (enable_cover_) {
+        UMat weight;
+        mask.getUMat().convertTo(weight, CV_32F);
+        multiply(weight, sharpness_, weight_map_);
+        threshold(weight_map_, weight_map_, 1.f, 1.f, THRESH_TRUNC);
+    } else {
+        createWeightMap(mask, sharpness_, weight_map_);
+    }
+
     Mat weight_map = weight_map_.getMat(ACCESS_READ);
     Mat dst_weight_map = dst_weight_map_.getMat(ACCESS_RW);
 
@@ -171,6 +178,11 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
     }
 }
 
+void cvFeatherBlender::feed(const std::vector<Mat> &vImgs, const std::vector<Mat> &vMasks, const std::vector<Point> &vTopleftCorners)
+{
+    //! TODO . 开启强覆盖功能.
+    //! 在重叠区域设置调整强覆盖区域的权重, 使在时序上后面的高权前景部分覆盖前面的前景.
+}
 
 void cvFeatherBlender::blend(InputOutputArray dst, InputOutputArray dst_mask)
 {
@@ -303,17 +315,18 @@ void cvMultiBandBlender::feed(InputArray _img, InputArray mask, Point tl)
     // Create the source image Laplacian pyramid
     UMat img_with_border;
     copyMakeBorder(_img, img_with_border, top, bottom, left, right, BORDER_REFLECT); // 生成添加了边界的图像
-    LOGLN("  Add border to the source image, time: " << ((getTickCount() - t) / getTickFrequency()) << " sec");
+
 #if ENABLE_LOG
+    TIMER("  Add border to the source image, time: " << ((getTickCount() - t) / getTickFrequency()) << " sec");
     t = getTickCount();
 #endif
 
     std::vector<UMat> src_pyr_laplace;
     createLaplacePyr(img_with_border, num_bands_, src_pyr_laplace);
 
-    LOGLN("  Create the source image Laplacian pyramid, time: "
-          << ((getTickCount() - t) / getTickFrequency()) << " sec");
 #if ENABLE_LOG
+    TIMER("  Create the source image Laplacian pyramid, time: "
+          << ((getTickCount() - t) / getTickFrequency()) << " sec");
     t = getTickCount();
 #endif
 
@@ -335,9 +348,10 @@ void cvMultiBandBlender::feed(InputArray _img, InputArray mask, Point tl)
     for (int i = 0; i < num_bands_; ++i)
         pyrDown(weight_pyr_gauss[i], weight_pyr_gauss[i + 1]);
 
-    LOGLN("  Create the weight map Gaussian pyramid, time: " << ((getTickCount() - t) / getTickFrequency())
-                                                             << " sec");
+
 #if ENABLE_LOG
+    TIMER("  Create the weight map Gaussian pyramid, time: " << ((getTickCount() - t) / getTickFrequency())
+                                                             << " sec");
     t = getTickCount();
 #endif
 
@@ -391,9 +405,10 @@ void cvMultiBandBlender::feed(InputArray _img, InputArray mask, Point tl)
         x_br /= 2;
         y_br /= 2;
     }
-
-    LOGLN("  Add weighted layer of the source image to the final Laplacian pyramid layer, time: "
+#if ENABLE_LOG
+    TIMER("  Add weighted layer of the source image to the final Laplacian pyramid layer, time: "
           << ((getTickCount() - t) / getTickFrequency()) << " sec");
+#endif
 }
 
 
@@ -468,14 +483,15 @@ void normalizeUsingWeightMap(InputArray _weight, InputOutputArray _src)
 void createWeightMap(InputArray mask, float sharpness, InputOutputArray weight)
 {
     assert(mask.type() == CV_8U);
-    distanceTransform(mask, weight, DIST_L1, 3, CV_8UC1);
+
+    distanceTransform(mask, weight, DIST_L1, 3); // CV_32F
 
 #if ENABLE_DEBUG_RESULT
-    cout << mask.type() << mask.size() << endl;
-    cout << weight.type() << weight.size() << endl;
-    Mat wu, w;
+    Mat w, wu;
 
-    hconcat(mask, weight, w);
+    cout << "weight type:" << weight.getMat().type() << endl;
+    weight.getMat().convertTo(wu, CV_8UC1);
+    hconcat(mask, wu, w);
     imshow("mask & weight", w);
 #endif
 
@@ -484,10 +500,16 @@ void createWeightMap(InputArray mask, float sharpness, InputOutputArray weight)
     threshold(tmp, weight, 1.f, 1.f, THRESH_TRUNC);
 
 #if ENABLE_DEBUG_RESULT
+    cout << "tmp type:" << tmp.type() << endl;
+    cout << "weight type:" << weight.type() << endl;
+
+    Mat tmp1, tmp2;
+
+    normalize(weight, tmp1, 0, 255, NORM_MINMAX);
     Mat w2;
-    hconcat(tmp, weight, w2);
+    hconcat(tmp, tmp1, w2);
     imshow("weight * sharpness & threshold weight", w2);
-    waitKey(30);
+    waitKey(0);
 #endif
 }
 

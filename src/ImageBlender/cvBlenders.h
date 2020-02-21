@@ -98,14 +98,21 @@ protected:
 class cvFeatherBlender : public cvBlender
 {
 public:
-    inline cvFeatherBlender(float sharpness = 0.02f) { setSharpness(sharpness); }
+    inline cvFeatherBlender(float sharpness = 0.02f, bool cover = false)
+        : sharpness_(sharpness), enable_cover_(cover) {}
 
     float sharpness() const { return sharpness_; }
     void setSharpness(float val) { sharpness_ = val; }
+    bool enableCover() const { return enable_cover_; }
+    void setEnableCover(bool flag) { enable_cover_ = flag; }
 
     void prepare(Rect dst_roi) override;
     void feed(InputArray img, InputArray mask, Point tl) override;
     void blend(InputOutputArray dst, InputOutputArray dst_mask) override;
+
+    //! TODO
+    void feed(const std::vector<Mat>& vImgs, const std::vector<Mat>& vMasks,
+              const std::vector<Point>& vTopleftCorners);
 
     //! Creates weight maps for fixed set of source images by their masks and top-left corners.
     //! Final image can be obtained by simple weighting of the source images.
@@ -116,6 +123,8 @@ private:
     float sharpness_;
     UMat weight_map_;
     UMat dst_weight_map_;
+
+    bool enable_cover_;
 };
 
 
