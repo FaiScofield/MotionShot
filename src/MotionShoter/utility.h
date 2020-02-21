@@ -47,6 +47,9 @@ void showFlow(const cv::Mat& flow, cv::Mat& color);
 
 void drawhistogram(const cv::Mat& src, cv::Mat& hist, const cv::Mat& mask = cv::Mat(), int binSize = 1);
 
+void drawFlowAndHist(const cv::Mat& flow, cv::Mat& flowGray, cv::Mat& hist, cv::Mat& histGraph,
+                     int chanel = 1, int binSize = 1);
+
 cv::Rect resultRoi(const std::vector<cv::Point>& corners, const std::vector<cv::Size>& sizes);
 
 cv::Rect resultRoi(const std::vector<cv::Point>& corners, const std::vector<cv::UMat>& images);

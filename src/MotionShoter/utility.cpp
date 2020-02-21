@@ -375,7 +375,7 @@ void showFlow(const cv::Mat& flow, cv::Mat& color)
 
 void drawhistogram(const Mat& src, Mat& histGray, const Mat& mask, int binSize)
 {
-    assert(src.channels() == 1);
+    assert(src.channels() == 1);  // 8UC1
     assert(binSize < 128 && binSize >= 1);
 
     int channels = 0;
@@ -384,9 +384,12 @@ void drawhistogram(const Mat& src, Mat& histGray, const Mat& mask, int binSize)
     const float* ranges = {range_};
     Mat hist;
     calcHist(&src, 1, &channels, mask, hist, 1, &histSize, &ranges);
+//    cout << "hist.type = " << hist.type() << endl;
+//    cout << "hist = " << hist.t() << endl;
 
     // 直方图归一化
-    normalize(hist, hist, 1.0, 0.0, NORM_MINMAX);
+    normalize(hist, hist, 1.0, 0.0, NORM_MINMAX); // 32FC1
+//    cout << "hist norm = " << hist.t() << endl;
 
     // 在直方图中画出直方图
     const int boardSize = 5;
@@ -394,13 +397,83 @@ void drawhistogram(const Mat& src, Mat& histGray, const Mat& mask, int binSize)
     histGray = Mat(imgSize, imgSize, CV_8UC1, Scalar(255));
     int hpt = static_cast<int>(0.9 * 256);
     for (int h = 0; h < histSize; h++) {
-        float binVal = hist.at<float>(h);
+        const float binVal = hist.at<float>(h);
         if (binVal > 0) {
-            int intensity = static_cast<int>(binVal * hpt);
+            const int intensity = static_cast<int>(binVal * hpt);
             line(histGray, Point(boardSize + h * binSize, boardSize + 256),
                  Point(boardSize + h * binSize, boardSize + 256 - intensity), Scalar(0), binSize);
         }
     }
+
+    double maxValue, minValue;
+    int minLoc, maxLoc;
+    minMaxLoc(SparseMat(hist), &minValue, &maxValue, &minLoc, &maxLoc);
+    cout << "min/max value/loc: " << minValue << "/" << maxValue << ", " << minLoc << "/" << maxLoc << endl;
+
+    int th = maxLoc;
+    while (--th > minLoc) {
+        const float binVal = hist.at<float>(th);
+        if (binVal < 0.1) {
+            cout << "break value = " << binVal << ", loc = " << th << endl;
+            break;
+        }
+    }
+    Mat dst;
+    threshold(src, dst, th * binSize, 255, THRESH_BINARY);
+    imshow("src", src);
+    imshow("dst threshold", dst);
+    waitKey(0);
+}
+
+void drawFlowAndHist(const Mat& flow, Mat& flowGray, Mat& hist, Mat& histGraph, int chanel,int binSize)
+{
+    assert(flow.type() == CV_32FC2);  // CV_32FC2
+    assert(binSize < 128 && binSize >= 1);
+    assert(chanel == 1 || chanel == 2);
+
+    // flow to weight mask
+    flowGray.release();
+    flowGray = Mat::zeros(flow.size(), CV_32FC1);
+    for (int y = 0; y < flow.rows; ++y) {
+        const Point2f* f_row = flow.ptr<Point2f>(y);
+        float* fg_row = flowGray.ptr<float>(y);
+        for (int x = 0; x < flow.cols; ++x)
+            fg_row[x] = norm(Mat_<Point2f>(f_row[x]), NORM_L2);
+    }
+    normalize(flowGray, flowGray, 1.0, 0.0, NORM_MINMAX);
+    flowGray.convertTo(flowGray, CV_8UC1, 255);
+    imshow("flowGray", flowGray);
+
+
+    // hist (32FC1)
+    int histSize = 256 / binSize; // 51 / 256
+    float range_[] = {0, 256};
+    const float* ranges = {range_};
+    if (chanel == 1) {
+        int channels = 0;
+        calcHist(&flowGray, 1, &channels, Mat(), hist, 1, &histSize, &ranges);
+    } else {
+        int channels[2] = {0, 1};
+        calcHist(&flowGray, 1, channels, Mat(), hist, 1, &histSize, &ranges);
+    }
+    normalize(hist, hist, 1.0, 0.0, NORM_MINMAX); // 直方图归一化. 32FC1
+
+    // 画出直方图
+    const int boardSize = 5;
+    const int imgSize = 256 + 2 * boardSize;
+    histGraph = Mat(imgSize, imgSize, CV_8UC1, Scalar(255));
+    int hpt = static_cast<int>(0.9 * 256);
+    for (int h = 0; h < histSize; h++) {
+        const float binVal = hist.at<float>(h);
+        if (binVal > 0) {
+            const int intensity = static_cast<int>(binVal * hpt);
+            line(histGraph, Point(boardSize + h * binSize, boardSize + 256),
+                 Point(boardSize + h * binSize, boardSize + 256 - intensity), Scalar(0), binSize);
+        }
+    }
+    imshow("hist gray", histGraph);
+
+    waitKey(30);
 }
 
 /**

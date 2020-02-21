@@ -5,7 +5,7 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
-#define SHOW_RESULTS 1
+#define SHOW_RESULTS 0
 
 namespace ms
 {
@@ -61,21 +61,21 @@ bool ImageStitcher::stitch(const std::vector<Mat>& images, Mat& pano)
     return stitch(images.front(), images.back(), pano);
 }
 
+//! 要以尾帧做基准
 bool ImageStitcher::stitch(const Mat& img1, const Mat& img2, Mat& pano)
 {
     Mat H21 = computeHomography(img1, img2);
     if (H21.empty())
         return false;
 
-    Mat img2_warped;
-    Mat H12 = H21.inv();
-    WarpedCorners corners = getWarpedCorners(img2, H12);
-    int pano_cols = max(cvCeil(max(corners.tr.x, corners.br.x)), img1.cols);
-    warpPerspective(img2, img2_warped, H12, Size(pano_cols, img1.rows));
+    Mat img1_warped;
+    WarpedCorners corners = getWarpedCorners(img2, H21);
+    int pano_cols = max(cvCeil(max(corners.tr.x, corners.br.x)), img2.cols);
+    warpPerspective(img1, img1_warped, H21, Size(pano_cols, img2.rows));
 
-    Mat img1_warped = Mat::zeros(img2_warped.size(), CV_8UC3);
-    img1.copyTo(img1_warped.colRange(0, img1.cols));
-    alphaBlend(img1_warped, img2_warped, corners, pano);
+    Mat img2_warped = Mat::zeros(img1_warped.size(), CV_8UC3);
+    img2.copyTo(img2_warped.colRange(0, img2.cols));
+    alphaBlend(img2_warped, img1_warped, corners, pano);
 
     return (!pano.empty());
 }
@@ -128,8 +128,11 @@ Mat ImageStitcher::computeHomography(const Mat& img1, const Mat& img2)
     }
 
     // 使用RANSAC算法估算单应矩阵
-    vector<char> inliers;
-    Mat homography = findHomography(points1, points2, inliers, RANSAC, 1.);
+    vector<uchar> inliers;
+    Mat homography = findHomography(points1, points2, inliers, RANSAC, 3.);
+    if (homography.empty()) {
+        return Mat();
+    }
 
 #if SHOW_RESULTS
     Mat imageMatches;
@@ -139,7 +142,7 @@ Mat ImageStitcher::computeHomography(const Mat& img1, const Mat& img2)
 
     // 用单应矩阵对图像进行变换
     Mat warped;
-    Mat H12 = homography.inv();
+    Mat H12 = homography.inv(DECOMP_SVD);
     WarpedCorners corners = getWarpedCorners(img2, H12);
     int pano_cols = max(cvCeil(max(corners.tr.x, corners.br.x)), img1.cols);
     warpPerspective(img2, warped, H12, Size(pano_cols, img2.rows));

@@ -14,7 +14,7 @@ using namespace cv;
 OpticalFlower::OpticalFlower()
 {
 #ifdef USE_OPENCV4
-    denseFlow_ = dynamic_cast<DenseOpticalFlow*>(
+    _denseFlow = dynamic_cast<DenseOpticalFlow*>(
         cv::DISOpticalFlow::create(cv::DISOpticalFlow::PRESET_MEDIUM).get());
 #else
     //    _denseFlow = FarnebackOpticalFlow::create();

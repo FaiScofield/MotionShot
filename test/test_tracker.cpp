@@ -1,7 +1,7 @@
 #include "utility.h"
 #include "MotionTracker.h"
-#include "BS_MOG2_CV.h"
 #include "OpticalFlower.h"
+#include "utility.h"
 #include <iostream>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
@@ -72,12 +72,13 @@ int main(int argc, char *argv[])
         scale = 0.4;
     }
     resizeFlipRotateImages(vImages, scale, flip, rotate);
-    cout << " - start = " << start << endl;
-    cout << " - num = " << num << endl;
+    cout << " - start = " << max(0, start) << endl;
+    cout << " - num = " << vImages.size() << endl;
 
-    TickMeter tm;
-    tm.start();
+    TickMeter timer;
+    timer.start();
 
+/*
     /// get pano
     vector<Mat> toStitch(5);
     const int delta = vImages.size() / 5;
@@ -100,7 +101,9 @@ int main(int argc, char *argv[])
 
     imshow("pano", pano);
     waitKey(1000);
+*/
 
+    /*
     OpticalFlower* optFlower = new OpticalFlower();
     for (size_t i = 0, iend = vImages.size(); i < iend; ++i) {
         const Mat& frame = vImages[i];
@@ -113,8 +116,108 @@ int main(int argc, char *argv[])
         imshow("mask & weight", tmp);
         waitKey(30);
     }
+*/
+
+    timer.start();
 
     /// track
+#ifdef USE_OPENCV4
+    Ptr<DISOpticalFlow> optFlower = DISOpticalFlow::create();
+//    Ptr<FarnebackOpticalFlow> optFlower = FarnebackOpticalFlow::create();
+#else
+    Ptr<DualTVL1OpticalFlow> optFlower = DualTVL1OpticalFlow::create();
+    Ptr<FarnebackOpticalFlow> optFlower2 = FarnebackOpticalFlow::create();
+#endif
+
+    vector<Mat> vFlows(vImages.size());
+    Mat frameLast, frameCurr;
+    for (size_t i = 0, iend = vImages.size(); i < iend; ++i) {
+        cvtColor(vImages[i], frameCurr, COLOR_BGR2GRAY);
+        if (i == 0) {
+            frameLast = frameCurr.clone();
+            continue;
+        }
+
+        Mat flowi;
+        if (i == 1) {
+            optFlower->calc(frameCurr, frameLast, flowi);
+            multiply(flowi, -1, flowi);
+            vFlows[0] = flowi;
+        }
+
+        optFlower->calc(frameLast, frameCurr, flowi);
+        vFlows[i] = flowi;
+
+        int binSize = 5;
+        Mat flowColor, flowGray, hist, histGraph;
+        //flowToColor(flowi, flowColor);
+        drawFlowAndHist(flowi, flowGray, hist, histGraph, 1, binSize);
+
+        // 对flow进行二值化
+//        double maxValue, minValue;
+//        int minLoc, maxLoc;
+//        minMaxLoc(SparseMat(hist), &minValue, &maxValue, &minLoc, &maxLoc);
+////        cout << "max loc: " << maxLoc << endl;
+
+//        int th1 = maxLoc;
+//        while (--th1 >= 0) {
+//            if (hist.at<float>(th1) < 0.2) {
+////                cout << "break loc1 = " << th1 << endl;
+//                break;
+//            }
+//        }
+//        int th2 = maxLoc;
+//        while (++th2 < 256) {
+//            if (hist.at<float>(th2) < 0.2) {
+////                cout << "break loc2 = " << th2 << endl;
+//                break;
+//            }
+//        }
+//        Mat dst = flowGray.clone();
+//        for (int y = 0; y < flowGray.rows; ++y) {
+//            const uchar* fg_row = flowGray.ptr<uchar>(y);
+//            uchar* dst_row = dst.ptr<uchar>(y);
+//            for (int x = 0; x < flowGray.cols; ++x) {
+//                if (fg_row[x] > th1 * binSize  && fg_row[x] < th2 * binSize);
+//                    dst_row[x] = 0;
+////                if (fg_row[x] < th1 * binSize || fg_row[x] > th2 * binSize);
+////                    dst_row[x] = 255;
+//            }
+//        }
+
+        Mat dst;
+        threshold(flowGray, dst, 80, 255, THRESH_BINARY);
+        imshow("dst threshold", dst);
+//        waitKey(30);
+
+//        showFlow(flowi, flowColor);
+//        imshow("flowColor", flowColor);
+//        cvtColor(flowColor, flowGray, COLOR_BGR2GRAY);
+//        bitwise_not(flowGray, flowGray);
+//        imshow("flowGray", flowGray);
+
+//        drawhistogram(flowGray, hist, Mat(), 5);
+//        imshow("flowHist", hist);
+
+//        Mat th1, th2, th3, tmp1, tmp2, tmp3;
+//        threshold(flowGray, th1, 100, 255, THRESH_TOZERO);
+//        threshold(flowGray, th2, 0, 255, THRESH_OTSU);
+//        threshold(flowGray, th3, 0, 255, THRESH_TRIANGLE);
+//        bitwise_not(th1, th1);
+//        bitwise_not(th2, th2);
+//        bitwise_not(th3, th3);
+//        vconcat(th1, th2, tmp1);
+//        vconcat(tmp1, th3, tmp2);
+//        imshow("threshold", tmp2);;
+
+//        waitKey(800);
+
+        frameLast = frameCurr.clone();
+    }
+
+    timer.stop();
+    TIMER("光流计算耗时(s): " << timer.getTimeSec());
+    waitKey(0);
 //    auto bs = createBackgroundSubtractorMOG2(500, 100, false);
 //    new OpticalFlower();
 //    BS_MOG2_CV be(bs.get());

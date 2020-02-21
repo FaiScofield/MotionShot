@@ -26,7 +26,7 @@ public:
 
     ImageStitcher(FeatureType ft = surf, MatchType mt = flann);
 
-    //    bool setMatcher(const std::string& descriptorMatcherType);
+    // bool setMatcher(const std::string& descriptorMatcherType);
 
     bool stitch(const std::vector<cv::Mat>& images, cv::Mat& pano);
     bool stitch(const cv::Mat& img1, const cv::Mat& img2, cv::Mat& pano);

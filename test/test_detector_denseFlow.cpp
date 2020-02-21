@@ -39,7 +39,7 @@ int main(int argc, char* argv[])
                "{write     w|false|write result sequence to a dideo}"
                "{help      h|false|show help message}");
 
-    if (parser.get<bool>("help")) {
+    if (argc < 2 || parser.get<bool>("help")) {
         parser.printMessage();
         return 0;
     }
@@ -85,7 +85,7 @@ int main(int argc, char* argv[])
     }
     resizeFlipRotateImages(vImages, scale, flip, rotate);
     timer.stop();
-    cout << "[Timer] Cost time in reading datas: " << timer.getTimeSec() / timer.getCounter() << endl;
+    cout << "[Timer] Cost time in reading datas: " << timer.getTimeSec()  << endl;
 
     /// get pano
 //    timer.start();
@@ -104,7 +104,7 @@ int main(int argc, char* argv[])
 //        return -1;
 //    }
 //    timer.stop();
-//    double time = timer.getTimeSec() / timer.getCounter();
+//    double time = timer.getTimeSec() ;
 //    cout << " - Time cost in stitching = " << time << "s" << endl;
 //    cout << " - Image size = " << vImages[0].size() << endl;
 //    cout << " - Pano size = " << pano.size()  << endl;
@@ -157,7 +157,7 @@ int main(int argc, char* argv[])
         Mat rgbU;
         bgr1.convertTo(rgbU, CV_8UC3, 255, 0);
         timer.stop();
-        t1 += timer.getTimeSec() / timer.getCounter();
+        t1 += timer.getTimeSec() ;
 
         // 二值化
         Mat mask1(bgr1.size(), CV_8UC1, Scalar(255)), grayU1;
@@ -197,7 +197,7 @@ int main(int argc, char* argv[])
         /* detector2 method */
         timer.start();
         Mat flow2, flow2_uv[2], mag2, ang2, hsv2, hsv_split2[3], bgr2;
-        detector2->calc(/*lastFrame*/panoGray, currentFrame, flow2);
+        detector2->calc(lastFrame/*panoGray*/, currentFrame, flow2);
         split(flow2, flow2_uv);
         multiply(flow2_uv[1], -1, flow2_uv[1]);
         cartToPolar(flow2_uv[0], flow2_uv[1], mag2, ang2, true);
@@ -210,7 +210,7 @@ int main(int argc, char* argv[])
         Mat rgbU2;
         bgr2.convertTo(rgbU2, CV_8UC3,  255, 0);
         timer.stop();
-        t2 += timer.getTimeSec() / timer.getCounter();
+        t2 += timer.getTimeSec() ;
 
         // 二值化
         Mat mask2(bgr2.size(), CV_8UC1, Scalar(255)), grayU2;
@@ -352,7 +352,7 @@ int main(int argc, char* argv[])
     timer.stop();
     cout << " - image size: " << vImages[0].cols << " x " << vImages[0].rows << endl;
     cout << " - pano size: " << pano.cols << " x " << pano.rows << endl;
-    cout << "[Timer] Cost time in stitching images: " << timer.getTimeSec() / timer.getCounter() << endl;
+    cout << "[Timer] Cost time in stitching images: " << timer.getTimeSec()  << endl;
 
 
     /// get foregrounds
@@ -402,7 +402,7 @@ int main(int argc, char* argv[])
     vImageIndex.pop_back(); // 去掉最后2帧, 前景太多
     vImageIndex.pop_back();
     timer.stop();
-    cout << "[Timer] Cost time in calc H: " << timer.getTimeSec() / timer.getCounter() << endl;
+    cout << "[Timer] Cost time in calc H: " << timer.getTimeSec()  << endl;
 
 
     /// blending

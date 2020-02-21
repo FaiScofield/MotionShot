@@ -26,7 +26,7 @@ else()
 endif()
 
 ## OpenCV
-#set(OpenCV_DIR /home/vance/opt/opencv-4.2.0/build)
+set(OpenCV_DIR /home/vance/opt/opencv-4.2.0/build)
 find_package(OpenCV 4)
 if (OpenCV_FOUND)
     add_definitions(-DUSE_OPENCV4)
