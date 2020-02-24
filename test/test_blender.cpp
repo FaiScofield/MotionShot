@@ -25,7 +25,7 @@ int main(int argc, char* argv[])
     /// parse input arguments
     CommandLineParser
         parser(argc, argv,
-               "{folder     f| |LASISESTA dataset folder}"
+               "{folder     f| |LASIESTA dataset folder}"
                "{blender    b|multiband|valid blend type: \"feather\", \"multiband\", \"poission\"}"
                "{delta      d|10|interval from frame to frame for foreground. If delta = 0, output "
                "5~15 images}"
@@ -81,7 +81,7 @@ int main(int argc, char* argv[])
     cout << " - delta = " << delta << endl;
 
     vector<Mat> vImages, vGTsColor, vMasks;
-    ReadImageSequence_lasisesta(str_folder, vImages, vGTsColor, start, end - start);
+    ReadImageSequence_lasiesta(str_folder, vImages, vGTsColor, start, end - start);
     if (vImages.empty() || vGTsColor.empty())
         exit(-1);
     int N = vImages.size();

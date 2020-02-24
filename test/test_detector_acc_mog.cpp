@@ -12,7 +12,8 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/video/video.hpp>
 
-#define WATERSHED 0
+#define STATIC_SCENE    1
+#define SAVE_OUTPUT_TO_VIDEO   0
 
 using namespace cv;
 using namespace std;
@@ -22,8 +23,8 @@ int main(int argc, char* argv[])
 {
     /// parse input arguments
     CommandLineParser parser(argc, argv,
-               "{type      t|VIDEO|value input type: VIDEO, LASISESTA, HUAWEI}"
-               "{folder    f| |data folder or video file for type LASISESTA/HUAWEI/VIDEO}"
+               "{type      t|VIDEO|value input type: VIDEO, LASIESTA, HUAWEI}"
+               "{folder    f| |data folder or video file for type LASSESTA/HUAWEI/VIDEO}"
                "{size      s|5|board size for fd detector}"
                "{scale     c|1|scale to resize image, 0.15 for type HUAWEI}"
                "{flip      p|0|flip image for type VIDEO, 0(x), +(y), -(xy)}"
@@ -49,8 +50,8 @@ int main(int argc, char* argv[])
     InputType inputType;
     if (str_type == "video" || str_type == "VIDEO") {
         inputType = VIDEO;
-    } else if (str_type == "lasisesta" || str_type == "LASISESTA") {
-        inputType = LASISESTA;
+    } else if (str_type == "lasiesta" || str_type == "LASSESTA") {
+        inputType = LASIESTA;
     } else if (str_type == "huawei" || str_type == "HUAWEI") {
         inputType = HUAWEI;
     } else {
@@ -59,8 +60,8 @@ int main(int argc, char* argv[])
     }
 
     vector<Mat> vImages, vGTs;
-    if (inputType == LASISESTA) {
-        ReadImageSequence_lasisesta(str_folder, vImages, vGTs);
+    if (inputType == LASIESTA) {
+        ReadImageSequence_lasiesta(str_folder, vImages, vGTs);
         scale = 1;
     } else if (inputType == HUAWEI) {
         ReadImageSequence_huawei(str_folder, vImages);
@@ -71,128 +72,126 @@ int main(int argc, char* argv[])
     }
     resizeFlipRotateImages(vImages, scale, flip, rotate);
 
-    /// 先拼接
-    ImageStitcher* stitcher = new ImageStitcher();
-    Mat pano;
-    stitcher->stitch(vImages.front(), vImages.back(), pano);
+    vector<Mat> vImgsToProcess;
+    vector<size_t> vIdxToProcess;
+    vector<vector<size_t>> vvIdxPerIter;
 
-//    vector<Mat> vHomographies;
-//    vHomographies.reserve(vImages.size());
-//    for (size_t i = 0, iend = vImages.size(); i < iend; ++i) {
-//        vHomographies.push_back(stitcher->computeHomography(vImages[i], pano));
-//    }
+    /// 先拼接
+    Mat pano, panoGray, warpedMask1;
+
+#if STATIC_SCENE
+    vImgsToProcess = vImages;
+    pano = vImages.back();
+#else
+    extractImagesToStitch(vImages, vImgsToProcess, vIdxToProcess, vvIdxPerIter, 10, 10);
+
+    ImageStitcher* stitcher = new ImageStitcher();
+    stitcher->stitch(vImgsToProcess.front(), vImgsToProcess.back(), pano,warpedMask1);
+
+    vector<Mat> vHomographies;  //? 计算和pano的变换? 还是和基准帧的变换?
+    vHomographies.reserve(vImgsToProcess.size());
+    for (size_t i = 0, iend = vImgsToProcess.size(); i < iend; ++i) {
+        vHomographies.push_back(stitcher->computeHomography(vImgsToProcess[i], pano));
+    }
+#endif
+
+    cvtColor(pano, panoGray, COLOR_BGR2GRAY);
 
     /// 再背景建模
-    Ptr<BackgroundSubtractorMOG2> detector = createBackgroundSubtractorMOG2(500, 100.0, true);
+    Ptr<BackgroundSubtractorMOG2> detector = createBackgroundSubtractorMOG2(vImgsToProcess.size(), 25.0, false); //! TODO. 输入背景
+
+#if SAVE_OUTPUT_TO_VIDEO
     const bool write = parser.get<bool>("write");
     VideoWriter writer("/home/vance/output/result.avi", VideoWriter::fourcc('M', 'J', 'P', 'G'), 25,
                        Size(vImages[0].cols, vImages[0].rows * 2));
-    for (size_t i = 0, iend = vImages.size(); i < iend; ++i) {
-        const Mat& frame = vImages[i];
-        Mat diff, frameGray;
-//        cvtColor(frame, frameGray, COLOR_BGR2GRAY);
+#endif
+    for (size_t i = 0, iend = vImgsToProcess.size(); i < iend; ++i) {
+        const Mat& frame = vImgsToProcess[i];
+        Mat frameGray;
+        cvtColor(frame, frameGray, COLOR_BGR2GRAY);
 
-        Mat frameWarped, warpResult;
+        Mat diff, background;
+        Mat frameWarped, frameWarpedGray, warpResult;
+#if STATIC_SCENE
+        detector->apply(frame/*Gray*/, diff);
+        detector->getBackgroundImage(background);
+        frameWarped = frame;
+#else
         warpPerspective(frame, frameWarped, vHomographies[i], pano.size()); //! TODO 解决像素为0的区域的背景问题
 
-        cout << frameWarped.size() << ", pano: " << pano.size() << endl;
+        cout << "warp size: " << frameWarped.size() << ", pano: " << pano.size() << endl;
         vconcat(frameWarped, pano, warpResult);
         imshow("warpResult", warpResult);
 
-        cvtColor(frameWarped, frameGray, COLOR_BGR2GRAY);
-        detector->apply(frameGray, diff, 0);
+        cvtColor(frameWarped, frameWarpedGray, COLOR_BGR2GRAY);
+        detector->apply(frameWarpedGray, diff);
+        detector->getBackgroundImage(background);
+#endif
         if (diff.empty()) {
-            cerr << "First Frame! i = " << i << endl;
+            cerr << "   First Frame! i = " << i << endl;
             continue;
         }
+        // 形态学操作, 去除噪声
+        Mat kernel1 = getStructuringElement(MORPH_RECT, Size(7, 7));
+        Mat kernel2 = getStructuringElement(MORPH_RECT, Size(7, 7));
+        morphologyEx(diff, diff, MORPH_OPEN, kernel1);
+        morphologyEx(diff, diff, MORPH_CLOSE, kernel2);
 
         // find contours
-        Mat frame_contours = frame.clone();
-        vector<vector<Point>> contours;
-#if WATERSHED
-        vector<Vec4i> hierarchy;
-        findContours(diff, contours, hierarchy, RETR_CCOMP, CHAIN_APPROX_SIMPLE);
+        Mat frame_contours = frameWarped.clone();
+        vector<vector<Point>> contours, contoursFilter;
+        findContours(diff, contours, RETR_EXTERNAL, CHAIN_APPROX_NONE);
         if (contours.empty())
             continue;
 
-        Mat markers = Mat::zeros(frame.size(), CV_32S);
-        int idx = 0, compCount = 0;
-        for (; idx >= 0; idx = hierarchy[idx][0], compCount++)
-            drawContours(markers, contours, idx, Scalar::all(compCount + 1), -1, 8, hierarchy, INT_MAX);
-        if (compCount == 0)
-            continue;
-
-        vector<Vec3b> colorTab;
-        for (int j = 0; j < compCount; j++) {
-            int b = theRNG().uniform(0, 255);
-            int g = theRNG().uniform(0, 255);
-            int r = theRNG().uniform(0, 255);
-
-            colorTab.push_back(Vec3b((uchar)b, (uchar)g, (uchar)r));
+        contoursFilter.reserve(contours.size());
+        const int th_minArera = 0.01 * pano.size().area();
+        for (size_t i = 0; i < contours.size(); ++i) {
+            if (contours[i].size() > th_minArera * 0.2)
+                contoursFilter.push_back(contours[i]);
         }
-
-        watershed(frame, markers);
-
-        // paint the watershed image
-        Mat wshed(markers.size(), CV_8UC3);
-        for (int i = 0; i < markers.rows; i++) {
-            for (int j = 0; j < markers.cols; j++) {
-                int index = markers.at<int>(i, j);
-                if (index == -1)
-                    wshed.at<Vec3b>(i, j) = Vec3b(255, 255, 255);
-                else if (index <= 0 || index > compCount)
-                    wshed.at<Vec3b>(i, j) = Vec3b(0, 0, 0);
-                else
-                    wshed.at<Vec3b>(i, j) = colorTab[index - 1];
-            }
-        }
-
-        wshed = wshed * 0.5 + frame * 0.5;
-        imshow("watershed transform", wshed);
-//        waitKey(0);
-#else
-//        findContours(diff, contours, RETR_EXTERNAL,
-//                     CHAIN_APPROX_TC89_KCOS);  // CHAIN_APPROX_TC89_L1, CHAIN_APPROX_NONE
-//        if (contours.empty())
-//            continue;
-
-//        drawContours(frame_contours, contours, -1, Scalar(0, 255, 0), 2);
-#endif
+        drawContours(frame_contours, contours, -1, Scalar(2500, 0, 0), 1);
+        drawContours(frame_contours, contoursFilter, -1, Scalar(0, 255, 0), 2);
 
         // calculate blobs
-//        vector<Rect> blobs;
-//        int maxArea = 0;
-//        for (int i = 0, iend = contours.size(); i < iend; ++i) {
-//            Rect blobi = boundingRect(contours[i]);
-//            //            if (blobi.area() < 10000)
-//            //                continue;
-//            if (blobi.area() > maxArea)
-//                maxArea = blobi.area();
-//            blobs.push_back(blobi);
-//        }
+        vector<Rect> blobs;
+        int maxArea = 0;
+        for (int i = 0, iend = contours.size(); i < iend; ++i) {
+            const Rect blobi = boundingRect(contours[i]);
+            if (blobi.area() < th_minArera)
+                continue;
+            if (blobi.area() > maxArea)
+                maxArea = blobi.area();
+            blobs.push_back(blobi);
+        }
 //        cout << " - max blob area: " << maxArea << endl;
 
-//        Mat diff_blobs, tmp, output;
-//        cvtColor(diff, diff_blobs, COLOR_GRAY2BGR);
-//        for (int i = 0, iend = blobs.size(); i < iend; ++i) {
-//            rectangle(diff_blobs, blobs[i], CV_RGB(0, 255, 0), 1);
-//            string txt = to_string(i) + "-" + to_string(blobs[i].area());
-//            putText(diff_blobs, txt, blobs[i].tl(), 1, 1., Scalar(0, 0, 255));
+        Mat diff_blobs, tmp, output;
+        cvtColor(diff, diff_blobs, COLOR_GRAY2BGR);
+        for (int i = 0, iend = blobs.size(); i < iend; ++i) {
+            rectangle(diff_blobs, blobs[i], Scalar(0, 255, 0), 1);
+            string txt = to_string(i) + "-" + to_string(blobs[i].area());
+            putText(diff_blobs, txt, blobs[i].tl(), 1, 1., Scalar(0, 0, 255));
 
-//            //            const Point tl = blobs[i].tl();
-//            //            const Point br = blobs[i].br();
-//            //            mask.rowRange(tl.y, br.y).colRange(tl.x, br.x).setTo(255);
-//        }
+            //  const Point tl = blobs[i].tl();
+            //  const Point br = blobs[i].br();
+            //  mask.rowRange(tl.y, br.y).colRange(tl.x, br.x).setTo(255);
+        }
 
-//        vconcat(frame_contours, diff_blobs, output);
-        imshow("result", diff/*output*/);
-//        if (write)
-//            writer.write(output);
-        if (waitKey(0) == 27)
+        vconcat(frame_contours, diff_blobs, output);
+        imshow("result", /*diff*/output);
+        if (waitKey(300) == 27)
             break;
-    }
 
+#if SAVE_OUTPUT_TO_VIDEO
+        if (write)
+            writer.write(output);
+    }
     writer.release();
+#else
+    }
+#endif
+
     destroyAllWindows();
     return 0;
 }

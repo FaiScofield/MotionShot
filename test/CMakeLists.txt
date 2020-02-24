@@ -11,8 +11,8 @@ add_executable(test_detector_acc_mog test_detector_acc_mog.cpp)
 target_link_libraries(test_detector_acc_mog ${LIB_MotionShot})
 
 
-#add_executable(test_detector_vibe test_detector_vibe.cpp)
-#target_link_libraries(test_detector_vibe ${LIB_MotionShot})
+add_executable(test_detector_vibe test_detector_vibe.cpp)
+target_link_libraries(test_detector_vibe ${LIB_MotionShot})
 
 #add_executable(test_detector_vibe+ test_detector_vibe+.cpp)
 #target_link_libraries(test_detector_vibe+ ${LIB_MotionShot})
@@ -21,8 +21,8 @@ target_link_libraries(test_detector_acc_mog ${LIB_MotionShot})
 add_executable(test_blender test_blender.cpp)
 target_link_libraries(test_blender ${LIB_MotionShot})
 
-add_executable(test_stitcher test_stitcher.cpp)
-target_link_libraries(test_stitcher ${LIB_MotionShot})
+#add_executable(test_stitcher test_stitcher.cpp)
+#target_link_libraries(test_stitcher ${LIB_MotionShot})
 
 
 

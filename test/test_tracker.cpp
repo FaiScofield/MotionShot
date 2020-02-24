@@ -21,8 +21,8 @@ int main(int argc, char *argv[])
 {
     /// parse input arguments
     CommandLineParser parser(argc, argv,
-               "{type      t|VIDEO|value input type: VIDEO, LASISESTA, HUAWEI}"
-               "{folder    f| |data folder or video file for type LASISESTA/HUAWEI/VIDEO}"
+               "{type      t|VIDEO|value input type: VIDEO, LASSESTA, HUAWEI}"
+               "{folder    f| |data folder or video file for type LASSESTA/HUAWEI/VIDEO}"
                "{size      s|5|min blob size}"
                "{scale     c|1|scale to resize image, 0.15 for type HUAWEI}"
                "{start     a|0|start index for image sequence}"
@@ -51,8 +51,8 @@ int main(int argc, char *argv[])
     InputType inputType;
     if (str_type == "video" || str_type == "VIDEO") {
         inputType = VIDEO;
-    } else if (str_type == "lasisesta" || str_type == "LASISESTA") {
-        inputType = LASISESTA;
+    } else if (str_type == "lasiesta" || str_type == "LASSESTA") {
+        inputType = LASIESTA;
     } else if (str_type == "huawei" || str_type == "HUAWEI") {
         inputType = HUAWEI;
     } else {
@@ -62,8 +62,8 @@ int main(int argc, char *argv[])
 
     //// read images
     vector<Mat> vImages, vGTs;
-    if (inputType == LASISESTA) {
-        ReadImageSequence_lasisesta(str_folder, vImages, vGTs, start, num);
+    if (inputType == LASIESTA) {
+        ReadImageSequence_lasiesta(str_folder, vImages, vGTs, start, num);
     } else if (inputType == HUAWEI) {
         ReadImageSequence_huawei(str_folder, vImages, start, num);
          scale = 0.15;
@@ -74,6 +74,9 @@ int main(int argc, char *argv[])
     resizeFlipRotateImages(vImages, scale, flip, rotate);
     cout << " - start = " << max(0, start) << endl;
     cout << " - num = " << vImages.size() << endl;
+
+//    vector<vector<int>> vvImgsPerIter;
+//    extractImagesToStitch(vImages, vvImgsPerIter);
 
     TickMeter timer;
     timer.start();
@@ -118,7 +121,10 @@ int main(int argc, char *argv[])
     }
 */
 
+//    Mat pano = vImages.back();
+
     timer.start();
+
 
     /// track
 #ifdef USE_OPENCV4

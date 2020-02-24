@@ -28,8 +28,8 @@ int main(int argc, char* argv[])
     /// parse input arguments
     CommandLineParser
         parser(argc, argv,
-               "{type      t|VIDEO|value input type: VIDEO, LASISESTA, HUAWEI}"
-               "{folder    f| |data folder or video file for type LASISESTA/HUAWEI/VIDEO}"
+               "{type      t|VIDEO|value input type: VIDEO, LASSESTA, HUAWEI}"
+               "{folder    f| |data folder or video file for type LASSESTA/HUAWEI/VIDEO}"
                "{dense     d|true|dense flow (otherwise sparse flow)}"
                "{size      s|5|kernel size for morphology operators}"
                "{showGT    g|false|if show ground for type DATASET}"
@@ -63,7 +63,7 @@ int main(int argc, char* argv[])
         inputType = VIDEO;
         showGT = false;
     } else if (str_type == "lasiesta" || str_type == "LASIESTA") {
-        inputType = LASISESTA;
+        inputType = LASIESTA;
         cout << " - showGT = " << showGT << endl;
     } else if (str_type == "huawei" || str_type == "HUAWEI") {
         inputType = HUAWEI;
@@ -75,8 +75,8 @@ int main(int argc, char* argv[])
 
     //// read images
     vector<Mat> vImages, vGTs;
-    if (inputType == LASISESTA) {
-        ReadImageSequence_lasisesta(str_folder, vImages, vGTs);
+    if (inputType == LASIESTA) {
+        ReadImageSequence_lasiesta(str_folder, vImages, vGTs);
     } else if (inputType == HUAWEI) {
         ReadImageSequence_huawei(str_folder, vImages);
         // scale = 0.15;

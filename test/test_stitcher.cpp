@@ -17,9 +17,8 @@ int main(int argc, char* argv[])
 {
     /// parse input arguments
     CommandLineParser parser(argc, argv,
-        "{type      t|VIDEO|value input type: VIDEO, LASISESTA, HUAWEI, SEQUENCE, TWO_IMAGES}"
-        "{folder    f| |data folder or video file for type LASISESTA/HUAWEI/SEQUENCE/VIDEO}"
-        "{suffix    s|jpg|image suffix for type SEQUENCE}"
+        "{type      t|VIDEO|value input type: VIDEO, LASIESTA, HUAWEI, SEQUENCE, TWO_IMAGES}"
+        "{folder    f| |data folder or video file for type LASIESTA/HUAWEI/SEQUENCE/VIDEO}"
         "{img1      1| |the first image for type TWO_IMAGES}"
         "{img2      2| |the second image for type TWO_IMAGES}"
         "{start     a|0|start index for image sequence}"
@@ -40,8 +39,8 @@ int main(int argc, char* argv[])
     cout << " - type = " << str_type << endl;
     if (str_type == "video" || str_type == "VIDEO") {
         inputType = VIDEO;
-    }  else if (str_type == "lasisesta" || str_type == "LASISESTA") {
-        inputType = LASISESTA;
+    }  else if (str_type == "lasiesta" || str_type == "LASIESTA") {
+        inputType = LASIESTA;
     } else if (str_type == "huawei" || str_type == "HUAWEI") {
         inputType = HUAWEI;
     } else if (str_type == "sequence" || str_type == "SEQUENCE") {
@@ -67,9 +66,9 @@ int main(int argc, char* argv[])
     vector<Mat> vImages, toStitch;
     Mat image1, image2;
     String str_suffix;
-    if (inputType == LASISESTA) {
+    if (inputType == LASIESTA) {
         vector<Mat> gts;
-        ReadImageSequence_lasisesta(str_folder, vImages, gts, start, num);
+        ReadImageSequence_lasiesta(str_folder, vImages, gts, start, num);
     } else if (inputType == HUAWEI) {
         ReadImageSequence_huawei(str_folder, vImages, start, num);
         //scale = 0.15;
@@ -117,8 +116,6 @@ int main(int argc, char* argv[])
     } else {
         toStitch.reserve(num / delta);
         for (int i = 0; i < num; ++i) {
-//            imshow("sequence", vImages[i]);
-//            waitKey(25);
             if (i % delta == 0)
                 toStitch.push_back(vImages[i]);
         }
@@ -143,11 +140,9 @@ int main(int argc, char* argv[])
     tm.start();
 
     Mat pano;
-//    ImageStitcher* stitcher = new ImageStitcher();
-//    Ptr<Stitcher> stitcher = Stitcher::create(Stitcher::PANORAMA);
-    Ptr<Stitcher> stitcher = Stitcher::create(Stitcher::SCANS);
+    Ptr<Stitcher> stitcher1 = Stitcher::create(Stitcher::SCANS);
     // stitcher->setWarper(); //! TODO 投影方式修改
-    Stitcher::Status status = stitcher->stitch(toStitch, pano);
+    Stitcher::Status status = stitcher1->stitch(toStitch, pano);
     if (status != Stitcher::OK) {
         cerr << "Can't stitch images, error code = " << int(status) << endl;
         system("pause");
@@ -160,15 +155,16 @@ int main(int argc, char* argv[])
     cout << " - Pano size = " << pano.size() << endl;
 
 //    namedWindow("Result Pano", WINDOW_FREERATIO | WINDOW_GUI_EXPANDED);
-    imshow("Result Pano", pano);
+    imshow("Result Pano CV", pano);
     string fileOut = "/home/vance/output/result_pano_cv_" + to_string(vImages.size()) + "-"
                      + to_string(toStitch.size()) + ".bmp";
     imwrite(fileOut, pano);
 
-    // test
-    ms::ImageStitcher is;
-    Mat pano2;
-    if (!is.stitch(image1, image2, pano2))
+
+    // our simple impl
+    ms::ImageStitcher stitcher2;
+    Mat pano2, warpedMask1;
+    if (!stitcher2.stitch(image1, image2, pano2, warpedMask1))
         return -1;
 
 //    Mat H21 = is.computeHomography(image1, image2);

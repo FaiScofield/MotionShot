@@ -4,6 +4,7 @@
 #include <opencv2/core/core.hpp>
 #include <string>
 #include <vector>
+//#include <map>
 
 namespace ms
 {
@@ -15,22 +16,22 @@ namespace ms
 
 enum InputType {
     VIDEO,      // 视频序列
-    LASISESTA,  // LASISESTA数据集
+    LASIESTA,   // LASIESTA数据集
     HUAWEI,     // 华为P30拍摄的数据集
     SEQUENCE,   // 图像序列(以数字序号命名)
     TWO_IMAGES  // 两张图片
 };
 
-void ReadImagesFromFolder_lasisesta(const std::string& folder, std::vector<cv::Mat>& imgs);
-void ReadGroundtruthFromFolder_lasisesta(const std::string& folder, std::vector<cv::Mat>& imgs);
+void ReadImagesFromFolder_lasiesta(const std::string& folder, std::vector<cv::Mat>& imgs);
+void ReadGroundtruthFromFolder_lasiesta(const std::string& folder, std::vector<cv::Mat>& imgs);
 
 void ReadImagesFromVideo(const std::string& video, std::vector<cv::Mat>& imgs);
 
 void ReadImageSequence(const std::string& prefix, const std::string& suffix,
                        std::vector<cv::Mat>& imgs, int startIndex, int num);
 
-void ReadImageSequence_lasisesta(const std::string& folder, std::vector<cv::Mat>& imgs,
-                                 std::vector<cv::Mat>& gts, int startIndex = 0, int num = -1);
+void ReadImageSequence_lasiesta(const std::string& folder, std::vector<cv::Mat>& imgs,
+                                std::vector<cv::Mat>& gts, int startIndex = 0, int num = -1);
 
 void ReadImageSequence_huawei(const std::string& folder, std::vector<cv::Mat>& imgs,
                               int startIndex = 0, int num = -1);
@@ -40,6 +41,12 @@ void ReadImageSequence_video(const std::string& video, std::vector<cv::Mat>& img
 
 // 输入图像的缩放,翻转和旋转. 主要是输入视频可能不正.
 void resizeFlipRotateImages(std::vector<cv::Mat>& imgs, double scale, int flip, int rotate);
+
+// 根据前景需要的数量提取出必要的帧进行处理. TODO 需要对输入进行筛选, 去掉模糊/不合适的图像
+
+void extractImagesToStitch(const std::vector<cv::Mat>& vImages, std::vector<cv::Mat>& vImagesToProcess,
+                           std::vector<size_t>& vIdxToProcess, std::vector<std::vector<size_t>>& vvIdxPerIter,
+                           size_t minFores = 3, size_t maxFores = 8);
 
 void flowToColor(const cv::Mat& flow, cv::Mat& color);
 

@@ -19,8 +19,8 @@ int main(int argc, char* argv[])
 {
     /// parse input arguments
     CommandLineParser parser(argc, argv,
-        "{type      t|sequence|input type for one of VIDEO, LASISESTA, HUAWEI, SEQUENCE, TWO_IMAGES}"
-        "{folder    f| |data folder or video file for type LASISESTA/HUAWEI dataset or VIDEO or SEQUENCE}"
+        "{type      t|sequence|input type for one of VIDEO, LASSESTA, HUAWEI, SEQUENCE, TWO_IMAGES}"
+        "{folder    f| |data folder or video file for type LASSESTA/HUAWEI dataset or VIDEO or SEQUENCE}"
         "{suffix    s|jpg|image suffix for type SEQUENCE}"
         "{img1      1| |the first image for type TWO_IMAGES}"
         "{img2      2| |the second image for type TWO_IMAGES}"
@@ -42,8 +42,8 @@ int main(int argc, char* argv[])
     cout << " - type = " << str_type << endl;
     if (str_type == "video" || str_type == "VIDEO") {
         inputType = VIDEO;
-    }  else if (str_type == "lasisesta" || str_type == "LASISESTA") {
-        inputType = LASISESTA;
+    }  else if (str_type == "lasiesta" || str_type == "LASSESTA") {
+        inputType = LASIESTA;
     } else if (str_type == "huawei" || str_type == "HUAWEI") {
         inputType = HUAWEI;
     } else if (str_type == "sequence" || str_type == "SEQUENCE") {
@@ -69,9 +69,9 @@ int main(int argc, char* argv[])
     vector<Mat> vImages, toStitch;
     Mat image1, image2;
     String str_suffix;
-    if (inputType == LASISESTA) {
+    if (inputType == LASIESTA) {
         vector<Mat> gts;
-        ReadImageSequence_lasisesta(str_folder, vImages, gts, start, num);
+        ReadImageSequence_lasiesta(str_folder, vImages, gts, start, num);
     } else if (inputType == HUAWEI) {
         ReadImageSequence_huawei(str_folder, vImages, start, num);
         scale = 0.15;

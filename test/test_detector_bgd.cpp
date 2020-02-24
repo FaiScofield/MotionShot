@@ -45,7 +45,7 @@ int main(int argc, char** argv)
     vector<Mat> vImags, vMaskGTs;
     if (boost::filesystem::is_directory(path)) {
         g_type = DATASET;
-        ReadImageSequence_lasisesta(dataPath, vImags, vMaskGTs);
+        ReadImageSequence_lasiesta(dataPath, vImags, vMaskGTs);
     } else {
         g_type = VIDEO;
         ReadImagesFromVideo(dataPath, vImags);

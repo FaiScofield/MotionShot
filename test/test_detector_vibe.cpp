@@ -39,12 +39,12 @@ int main(int argc, char* argv[])
     string dataPath(argv[1]); // "不要以/结尾"
     boost::filesystem::path path(dataPath);
     if (boost::filesystem::is_directory(path))
-        g_type = DATASET;
+        g_type = LASIESTA;
     else
         g_type = VIDEO;
 
     VideoCapture vc;
-    vector<string> vImags, vMaskGTs;
+    vector<Mat> vImags, vMaskGTs;
     if (g_type == VIDEO) {
         vc.open(dataPath);
         if (!vc.isOpened()) {
@@ -52,11 +52,11 @@ int main(int argc, char* argv[])
             exit(-1);
         }
     } else {
-        assert(g_type == DATASET);
+        assert(g_type == LASIESTA);
 
         string gtPath = dataPath + "-GT/";
-        ReadImageFiles(dataPath, vImags);
-        ReadImageGTFiles(gtPath, vMaskGTs);
+        ReadImagesFromFolder_lasiesta(dataPath, vImags);
+        ReadGroundtruthFromFolder_lasiesta(gtPath, vMaskGTs);
     }
 
     ViBe vibe;
@@ -87,8 +87,7 @@ int main(int argc, char* argv[])
         }
     } else {
         for (size_t i = 0, iend = vImags.size(); i < iend; ++i) {
-            frame = imread(vImags[i], CV_LOAD_IMAGE_COLOR);
-            mask_gt = imread(vMaskGTs[i], CV_LOAD_IMAGE_COLOR);
+            frame = vImags[i];
             if (frame.empty()) {
                 cerr << "Empty image for " << vImags[i] << endl;
                 continue;
@@ -102,15 +101,59 @@ int main(int argc, char* argv[])
             } else {
                 vibe.Run(gray);
                 mask = vibe.getFGModel();
-                if (!mask.empty()) {
-                    Mat mask_color, tmp;
-                    cvtColor(mask, mask_color, COLOR_GRAY2BGR);
-                    hconcat(frame, mask_gt, tmp);
-                    hconcat(tmp, mask_color, output);
-                    imshow("ViBe Method", output);
-                    if (waitKey(30) == 27)
-                        break;
+                if (mask.empty())
+                    continue;
+
+                // find contours
+                Mat frame_contours = frame.clone();
+                vector<vector<Point>> contours, contoursFilter;
+                findContours(mask, contours, RETR_EXTERNAL, CHAIN_APPROX_NONE);
+                if (contours.empty())
+                    continue;
+
+                contoursFilter.reserve(contours.size());
+                const int th_minArera = 0.001 * frame.size().area();
+                for (size_t i = 0; i < contours.size(); ++i) {
+                    if (contours[i].size() > th_minArera)
+                        contoursFilter.push_back(contours[i]);
                 }
+                drawContours(frame_contours, contours, -1, Scalar(2500, 0, 0), 1);
+                drawContours(frame_contours, contoursFilter, -1, Scalar(0, 255, 0), 2);
+
+                // calculate blobs
+                vector<Rect> blobs;
+                int maxArea = 0;
+                for (int i = 0, iend = contours.size(); i < iend; ++i) {
+                    const Rect blobi = boundingRect(contours[i]);
+                    if (blobi.area() < th_minArera)
+                        continue;
+                    if (blobi.area() > maxArea)
+                        maxArea = blobi.area();
+                    blobs.push_back(blobi);
+                }
+        //        cout << " - max blob area: " << maxArea << endl;
+
+                Mat diff_blobs, tmp, output;
+                cvtColor(mask, diff_blobs, COLOR_GRAY2BGR);
+                for (int i = 0, iend = blobs.size(); i < iend; ++i) {
+                    rectangle(diff_blobs, blobs[i], Scalar(0, 255, 0), 1);
+                    string txt = to_string(i) + "-" + to_string(blobs[i].area());
+                    putText(diff_blobs, txt, blobs[i].tl(), 1, 1., Scalar(0, 0, 255));
+
+                    //  const Point tl = blobs[i].tl();
+                    //  const Point br = blobs[i].br();
+                    //  mask.rowRange(tl.y, br.y).colRange(tl.x, br.x).setTo(255);
+                }
+
+                Mat mask_color, tmp1, tmp2;
+                cvtColor(mask, mask_color, COLOR_GRAY2BGR);
+                vconcat(frame, mask_color, tmp1);
+                vconcat(frame_contours, diff_blobs, tmp2);
+                hconcat(tmp1, tmp2, output);
+                imshow("ViBe Method", output);
+                if (waitKey(100) == 27)
+                    break;
+
             }
         }
     }

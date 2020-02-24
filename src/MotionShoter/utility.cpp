@@ -6,6 +6,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <set>
 
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/video/video.hpp>
@@ -17,7 +18,7 @@ using namespace cv;
 using namespace std;
 namespace bf = boost::filesystem;
 
-void ReadImagesFromFolder_lasisesta(const string& folder, vector<Mat>& imgs)
+void ReadImagesFromFolder_lasiesta(const string& folder, vector<Mat>& imgs)
 {
     imgs.clear();
 
@@ -56,7 +57,7 @@ void ReadImagesFromFolder_lasisesta(const string& folder, vector<Mat>& imgs)
         imgs.push_back(imread(it->second, IMREAD_COLOR));
 }
 
-void ReadGroundtruthFromFolder_lasisesta(const string& folder, vector<Mat>& imgs)
+void ReadGroundtruthFromFolder_lasiesta(const string& folder, vector<Mat>& imgs)
 {
     imgs.clear();
 
@@ -95,7 +96,7 @@ void ReadGroundtruthFromFolder_lasisesta(const string& folder, vector<Mat>& imgs
         imgs.push_back(imread(it->second, IMREAD_COLOR));
 }
 
-void ReadImageSequence_lasisesta(const string& folder, vector<Mat>& imgs, vector<Mat>& gts, int startIndex, int num)
+void ReadImageSequence_lasiesta(const string& folder, vector<Mat>& imgs, vector<Mat>& gts, int startIndex, int num)
 {
     imgs.clear();
 
@@ -106,8 +107,8 @@ void ReadImageSequence_lasisesta(const string& folder, vector<Mat>& imgs, vector
     else
         gtFolder = folder + "-GT/";
 
-    ReadImagesFromFolder_lasisesta(folder, allImages);
-    ReadGroundtruthFromFolder_lasisesta(gtFolder, allGts);
+    ReadImagesFromFolder_lasiesta(folder, allImages);
+    ReadGroundtruthFromFolder_lasiesta(gtFolder, allGts);
     assert(startIndex < allImages.size());
 
     const int S = max(0, startIndex);
@@ -274,6 +275,50 @@ void resizeFlipRotateImages(vector<Mat>& imgs, double scale, int flip, int rotat
     }
 }
 
+void extractImagesToStitch(const vector<Mat>& vImages, vector<Mat>& vImagesToProcess,
+                           vector<size_t>& vIdxToProcess, vector<vector<size_t>>& vvIdxPerIter,
+                           size_t minFores = 3, size_t maxFores = 8)
+{
+    assert(minFores > 2 && minFores <= maxFores);
+
+    vImagesToProcess.clear();
+    vIdxToProcess.clear();
+    vvIdxPerIter.clear();
+
+    const size_t N = vImages.size();
+    if (maxFores > N) {
+        cout << "输入图片数(" << N << ")少于最大前景数(" << maxFores << "), 全部处理." << endl;
+        maxFores = N;
+    }
+
+    vImagesToProcess.reserve(maxFores - minFores);
+    vIdxToProcess.reserve(maxFores - minFores);
+    vvIdxPerIter.reserve(maxFores - minFores);
+
+    std::set<size_t> sIdxToProcess;
+    for (size_t k = minFores; k <= maxFores; ++k) {
+        size_t d = N / k;
+        size_t idx = 0;
+        cout << "[前景数k = " << k << ", 间隔数d = " << d << "], 筛选的帧序号为: ";
+
+        vector<size_t> vIdxThisIter;
+        vIdxThisIter.reserve(k);
+        while (idx < N) {
+            sIdxToProcess.insert(idx);
+            vIdxThisIter.push_back(idx);
+            cout << idx << ", ";
+            idx += d;
+        }
+        cout << endl;
+
+        vvIdxPerIter.push_back(vIdxThisIter);
+    }
+
+    vIdxToProcess = vector<size_t>(sIdxToProcess.begin(), sIdxToProcess.end());
+    for (size_t i = 0, iend = vIdxToProcess.size(); i < iend; ++i)
+        vImagesToProcess.push_back(vImages[vIdxToProcess[i]]);
+}
+
 void makeColorWheel(vector<Scalar>& colorwheel)
 {
     int RY = 15;
@@ -357,7 +402,7 @@ void flowToColor(const Mat& flow, Mat& color)
     }
 }
 
-void showFlow(const cv::Mat& flow, cv::Mat& color)
+void showFlow(const Mat& flow, Mat& color)
 {
     Mat flow_uv[2], mag, ang, hsv, hsv_split[3], bgr;
     split(flow, flow_uv);
@@ -505,7 +550,7 @@ Rect resultRoi(const std::vector<Point>& corners, const std::vector<UMat>& image
     return resultRoi(corners, sizes);
 }
 
-void shrinkRoi(const cv::Mat& src, cv::Mat& dst, int size)
+void shrinkRoi(const Mat& src, Mat& dst, int size)
 {
     assert(src.type() == CV_8UC1);
 

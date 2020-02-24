@@ -9,11 +9,14 @@
 namespace ms
 {
 
+enum ForegroundMovingDirection { LEFT, RIGHT, UNKNOWN };
+
 struct WarpedCorners {
     cv::Point2f tl;
     cv::Point2f tr;
     cv::Point2f bl;
     cv::Point2f br;
+    ForegroundMovingDirection direction;
 };
 
 
@@ -29,7 +32,7 @@ public:
     // bool setMatcher(const std::string& descriptorMatcherType);
 
     bool stitch(const std::vector<cv::Mat>& images, cv::Mat& pano);
-    bool stitch(const cv::Mat& img1, const cv::Mat& img2, cv::Mat& pano);
+    bool stitch(const cv::Mat& img1, const cv::Mat& img2, cv::Mat& pano, cv::Mat& warpedMask1);
 
     cv::Mat computeHomography(const cv::Mat& img1, const cv::Mat& img2);
 
