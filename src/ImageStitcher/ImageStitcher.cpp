@@ -312,15 +312,16 @@ void ImageStitcher::alphaBlend(const Mat& img1, const Mat& img2, const WarpedCor
     cout << mask2Dist.type() << endl;
     imshow("mask2Dist", mask2Dist);
 
-//    cvFeatherBlender cvFB;
-//    Mat img1S, img2S;
-//    img1.convertTo(img1S, CV_16SC3);
-//    img2.convertTo(img2S, CV_16SC3);
-//    cvFB.prepare(Rect(0,0,img1.cols, img1.rows));
-//    cvFB.feed(img1S, mask1, Point(0, 0));
-//    cvFB.feed(img2S, mask2, Point(0, 0));
-//    cvFB.blend(pano, panoMask);
-//    imshow("pano", pano);
+    cvFeatherBlender cvFB;
+    Mat img1S, img2S;
+    img1.convertTo(img1S, CV_16SC3);
+    img2.convertTo(img2S, CV_16SC3);
+    cvFB.prepare(Rect(0,0,img1.cols, img1.rows));
+    cvFB.feed(img1S, mask1, Point(0, 0));
+    cvFB.feed(img2S, mask2, Point(0, 0));
+    cvFB.blend(pano, panoMask);
+    pano.convertTo(pano, CV_8U);
+    imshow("pano", pano);
 
 
 //    compare(img2, 0, mask2, CMP_EQ);

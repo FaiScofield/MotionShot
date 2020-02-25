@@ -32,14 +32,20 @@ namespace ms {
 class BGDiff : public BaseMotionDetector
 {
 public:
+    BGDiff() : nFrameCount(0) {}
+    ~BGDiff() {}
+
     void apply(const cv::Mat& input, cv::Mat& mask) override;
 
     // 背景差分算法 Background Difference Algorithm
-    void BackgroundDiff(cv::Mat src, cv::Mat& imgForeground, cv::Mat& imgBackground, int nFrmNum,
+    void BackgroundDiff(const cv::Mat& src, cv::Mat& imgForeground, cv::Mat& imgBackground, int nFrmNum,
                         int threshold_method = cv::THRESH_OTSU, double updateSpeed = 0.03);
 
     // 大津法 OTSU Algorithm
-    void Otsu(cv::Mat src, int& thresholdValue, bool ToShowValue = false);
+    void Otsu(const cv::Mat& src, int& thresholdValue, bool ToShowValue = false);
+
+private:
+    int nFrameCount;
 };
 
 }

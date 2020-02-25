@@ -13,6 +13,8 @@
 
 
 #define USE_FLOW_WEIGHT 0
+#define GET_FOREGROUND_FROM_GT  1
+#define AVE_BACKGROUND  0
 
 using namespace std;
 using namespace cv;
@@ -53,7 +55,7 @@ int main(int argc, char* argv[])
     BlenderType blenderType;
     if (str_blender == "feather") {
 //        blender = dynamic_cast<detail::Blender*>(new detail::FeatherBlender());
-        blender = new ms::cvFeatherBlender(0.1, false);
+        blender = new ms::cvFeatherBlender(1.0, true);
         blenderType = FEATHER;
     } else if (str_blender == "multiband") {
 //        blender = dynamic_cast<detail::Blender*>(new detail::MultiBandBlender(false, 3, CV_32F));
@@ -97,65 +99,11 @@ int main(int argc, char* argv[])
     });
 
     /// calc the result in different gaps
-    int maxFores = 8, minFores = 3;  // 前景最多存在8个, 最少3个
+    size_t maxFores = 8, minFores = 3;  // 前景最多存在8个, 最少3个
     vector<Mat> vImgsToProcess;
-    vector<int> vIdxToProcess;
-
-    if (delta == 0) {
-        if (maxFores > N) {
-            cout << "输入图片数(" << N << ")少于最大前景数(" << maxFores << "), 全部处理." << endl;
-            maxFores = static_cast<int>(N);
-            vImgsToProcess = vImages;
-            vIdxToProcess.resize(N);
-            for (int i = 0; i < N; ++i)
-                vIdxToProcess[i] = i;
-        } else {
-            cout << "输入图片数(" << N << ")大于最大前景数(" << maxFores << "), 筛选处理中..." << endl;
-            set<int> sIdxToProcess;
-
-            for (int k = minFores; k <= maxFores; ++k) {
-                int d = N / k;
-                int idx = 0;
-                cout << "[前景数k = " << k << ", 间隔数d = " << d << "], 筛选的帧序号为: ";
-
-                vector<int> vIdxThisIter;
-                vIdxThisIter.reserve(k);
-                while (idx < N) {
-                    sIdxToProcess.insert(idx);
-                    vIdxThisIter.push_back(idx);
-                    cout << idx << ", ";
-                    idx += d;
-                }
-                cout << endl;
-            }
-
-            vIdxToProcess = vector<int>(sIdxToProcess.begin(), sIdxToProcess.end());
-            sort(vIdxToProcess.begin(), vIdxToProcess.end());
-
-            vImgsToProcess.reserve(vIdxToProcess.size());
-            cout << "所有要处理的帧序号是: ";
-            for_each(vIdxToProcess.begin(), vIdxToProcess.end(), [&](int idx){
-                cout << idx << ", ";
-                vImgsToProcess.push_back(vImages[idx]);
-            });
-            cout << "总数 = " << vIdxToProcess.size() << endl;
-        }
-    } else {
-        const int k = N / delta;
-        maxFores = minFores = k;
-
-        vIdxToProcess.reserve(k);
-        vImgsToProcess.reserve(k);
-        int idx = 0;
-        cout << "所有要处理的帧序号是: ";
-        while (idx < N) {
-            cout << idx << ", ";
-            vIdxToProcess.push_back(idx);
-            vImgsToProcess.push_back(vImages[idx]);
-            idx += delta;
-        }
-        cout << "总数 = " << vIdxToProcess.size() << endl;
-    }
+    vector<size_t> vIdxToProcess;
+    vector<vector<size_t>> vvIdxPerIter;
+    extractImagesToStitch(vImages, vImgsToProcess, vIdxToProcess, vvIdxPerIter, minFores, maxFores);
 
     timer.stop();
     TIMER("系统初始化耗时(s): " << timer.getTimeSec() / timer.getCounter());
@@ -177,18 +125,44 @@ int main(int argc, char* argv[])
     TIMER("光流计算耗时(s): " << timer.getTimeSec() / timer.getCounter());
 #endif
 
+    const int th_minBlobArea = 0.05 * vImages[0].size().area();
+    Ptr<BackgroundSubtractorMOG2> subtractor = createBackgroundSubtractorMOG2(vImgsToProcess.size(), 16.0, false);
+
+#if AVE_BACKGROUND
+    // 计算平均背景
+    Mat aveBackground = Mat::zeros(vImages[0].size(), CV_32FC3);
+    for (size_t i = 0; i < vImgsToProcess.size(); ++i) {
+        Mat frameF;
+        vImgsToProcess[i].convertTo(frameF, CV_32FC3);
+        //add(aveBackground, frameF, aveBackground);
+        accumulate(frameF, aveBackground);
+    }
+    multiply(aveBackground, 1./vImgsToProcess.size(), aveBackground);
+    aveBackground.convertTo(aveBackground, CV_8UC3);
+
+    imshow("aveBackground", aveBackground);
+    Mat maskAve;
+    subtractor->apply(aveBackground, maskAve);
+    imshow("maskAve", maskAve);
+//    waitKey(0);
+#endif
+
     for (int k = minFores; k <= maxFores; ++k) { // k为前景数量
         timer.start();
 
         // 1.获取前景区域
-        const int delta = N / k;
+        const vector<size_t>& vIdxThisIter = vvIdxPerIter[k - minFores];
         vector<Rect> vBlobs;
         vector<bool> vValid;
-        for (int i = 0; i < k; ++i) {
-            const int imgIdx = i * delta;
-            auto it = find(vIdxToProcess.begin(), vIdxToProcess.end(), imgIdx);
-
+        vector<Mat> vForeMaskPrecise;
+        for (size_t i = 0; i < vIdxThisIter.size(); ++i) {
+            const size_t& imgIdx = vIdxThisIter[i];
+//            const auto it = std::find(vIdxToProcess.begin(), vIdxToProcess.end(), imgIdx);
+//            const int idx = std::distance(vIdxToProcess.begin(), it);
+//            const Mat& frame = vImgsToProcess[idx];
+            const Mat& frame = vImages[imgIdx];
             vector<vector<Point>> contours;
+#if GET_FOREGROUND_FROM_GT
             findContours(vMasks[imgIdx], contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
             if (contours.empty()) {
                 vBlobs.push_back(Rect());
@@ -202,9 +176,94 @@ int main(int argc, char* argv[])
             vBlobs.push_back(blob);
             vValid.push_back(1);
             rectangle(frameOut, blob, Scalar(0, 0, 255), 2);
-            imshow("contour & blob", frameOut);
+//            imshow("contour & blob", frameOut);
+#else   // get foreground form BackgroundSubtractor
+            Mat diff;
+            subtractor->apply(frame, diff, 0);
+            Mat kernel1 = getStructuringElement(MORPH_RECT, Size(7, 7));
+            Mat kernel2 = getStructuringElement(MORPH_RECT, Size(5, 5));
+            morphologyEx(diff, diff, MORPH_OPEN, kernel1);
+            morphologyEx(diff, diff, MORPH_CLOSE, kernel2);
 
-            waitKey(200);
+            findContours(diff, contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+            if (contours.empty()) {
+                vBlobs.push_back(Rect());
+                vValid.push_back(0);
+                continue;
+            }
+            Mat frameOut = vImages[imgIdx].clone();
+            drawContours(frameOut, contours, -1, Scalar(0, 255, 0), 2);
+
+            int maxArea = 0, maxAreaIdx;
+            Rect maxBlob;
+            for (size_t j = 0; j < contours.size(); ++j) {
+                Rect blob = boundingRect(contours[j]);
+                if (blob.area() < th_minBlobArea)
+                    continue;
+                if (blob.area() > maxArea) {
+                    maxAreaIdx = j;
+                    maxBlob = blob;
+                }
+            }
+            vBlobs.push_back(maxBlob);
+            vValid.push_back(1);
+
+            Mat maxBlobMask = Mat::zeros(frame.size(), CV_8UC1);
+            maxBlobMask(maxBlob).setTo(255);
+            bitwise_and(maxBlobMask, diff, maxBlobMask);
+            vForeMaskPrecise.push_back(maxBlobMask);
+            rectangle(frameOut, maxBlob, Scalar(0, 0, 255), 2);
+            imshow("contour & blob", frameOut);
+            imshow("maxBlobMask", maxBlobMask);
+#endif
+            // 得到稍精确的前景掩模
+            Mat diff, diffColor;
+            subtractor->apply(frame, diff, -1);
+            Mat kernel1 = getStructuringElement(MORPH_RECT, Size(7, 7));
+            Mat kernel2 = getStructuringElement(MORPH_RECT, Size(9, 9));
+            morphologyEx(diff, diff, MORPH_OPEN, kernel1);
+            morphologyEx(diff, diff, MORPH_CLOSE, kernel2);
+            cvtColor(diff, diffColor, COLOR_GRAY2BGR);
+
+            Mat maxBlobMask = Mat::zeros(frame.size(), CV_8UC1);
+            maxBlobMask(blob).setTo(255);
+            bitwise_and(maxBlobMask, diff, maxBlobMask);
+
+            Mat tmp1 = frame.clone(), tmp2;
+            bitwise_not(maxBlobMask, tmp2);
+            tmp1.setTo(0, tmp2);
+            hconcat(frameOut, diffColor, tmp2);
+//            imshow("contour + blob & diff & ForeMaskPrecise", tmp2);
+
+            // 腐蚀contours, 去除边缘白边
+            Mat kernel3 = getStructuringElement(MORPH_RECT, Size(5, 5));
+            erode(maxBlobMask, maxBlobMask, kernel3);
+            Mat tmp3 = frame.clone(), tmp4;
+            bitwise_not(maxBlobMask, tmp4);
+            tmp3.setTo(0, tmp4);
+            hconcat(tmp2, tmp3, tmp3);
+            imshow("contour & blob & ForeMaskPrecise erode", tmp3);
+
+            // 过渡边缘
+            smoothMaskWeightEdge(maxBlobMask, maxBlobMask, 3);
+            vForeMaskPrecise.push_back(maxBlobMask);
+
+            waitKey(2000);
+
+#if AVE_BACKGROUND
+#else
+            // 利用最后一帧的diff更新第一帧的精确mask
+            if (i == vIdxThisIter.size() - 1) {
+                Mat blobMask = Mat::zeros(frame.size(), CV_8UC1);
+                blobMask(vBlobs[0]).setTo(255);
+                bitwise_and(blobMask, diff, blobMask);
+                erode(blobMask, blobMask, kernel3);
+                smoothMaskWeightEdge(blobMask, blobMask, 5);
+                vForeMaskPrecise[0] = blobMask;
+//                imshow("first blobMask", blobMask);
+//                waitKey(0);
+            }
+#endif
         }
         destroyAllWindows();
 
@@ -217,18 +276,21 @@ int main(int argc, char* argv[])
                 continue;
 
             const Rect& blob = vBlobs[j];
-            const int imgIdx = j * delta;
+            const size_t& imgIdx = vIdxThisIter[j];
+            const Mat& blobMask = vForeMaskPrecise[j];
 
             // blender
             Mat imgInput;
             vImages[imgIdx].convertTo(imgInput, CV_16SC3);
             Mat mask = Mat::zeros(pano.size(), CV_8UC1);
-            mask(blob).setTo(255);
+            mask(blob).setTo(20);
+            add(mask, blobMask, mask);
+            threshold(mask, mask, 255, 255, THRESH_TRUNC);
 
-            Mat tmp1, tmp2;
-            cvtColor(mask, tmp1, COLOR_GRAY2BGR);
-            hconcat(vImages[imgIdx], tmp1, tmp2);
-            imshow("imgInput & mask", tmp2);
+//            Mat tmp1, tmp2;
+//            cvtColor(mask, tmp1, COLOR_GRAY2BGR);
+//            hconcat(vImages[imgIdx], tmp1, tmp2);
+//            imshow("imgInput & mask", tmp2);
 
 
 #if USE_FLOW_WEIGHT
@@ -251,26 +313,25 @@ int main(int argc, char* argv[])
 
             blender->feed(imgInput, maskPlusFlow2, Point(0, 0));
 #else
-            blender->feed(imgInput, mask, Point(0, 0));
+            blender->feed(imgInput, /*blobMask*/mask, Point(0, 0));
 #endif
-            waitKey(200);
+//            waitKey(0);
         }
 //        waitKey(0);
         destroyAllWindows();
 
         Mat foreground_f, foregroundMask, foreground;
         blender->blend(foreground_f, foregroundMask);
-        // Preliminary result is in CV_16SC3 format, but all values are in [0,255] range,
-        // so convert it to avoid user confusing
         foreground_f.convertTo(foreground, CV_8U);
+//        imshow("foregroundMask", foregroundMask);
 
         Mat tmp1, tmp2;
         cvtColor(foregroundMask, tmp1, COLOR_GRAY2BGR);
         hconcat(foreground, tmp1, tmp2);
-        imshow("foreground and mask", tmp2);
-        string txt1 = "/home/vance/output/前景融合-" + strMode1 + "-" +to_string(k) + ".jpg";
-        imwrite(txt1, foreground);
-        waitKey(0);
+//        imshow("foreground and mask", tmp2);
+//        string txt1 = "/home/vance/output/前景融合-" + strMode1 + "-" +to_string(k) + ".jpg";
+//        imwrite(txt1, tmp2);
+//        waitKey(0);
 
         // 3.前背景融合
         //! TODO 把pano和前景对应的mask区域的稍微缩收/扩张, 设置具体的权重值, 然后再融合.
@@ -281,29 +342,16 @@ int main(int argc, char* argv[])
 
         blender2->prepare(dis_roi);
 
-        Mat noWeightMaskFore, backgroundMast;
-        const Mat kernel = getStructuringElement(MORPH_RECT, Size(10, 10));
-        erode(foregroundMask, noWeightMaskFore, kernel, Point(-1, -1), 1, BORDER_CONSTANT);
-        bitwise_not(foregroundMask, backgroundMast);
-        Mat distance, distanceU, weightArea, weightAreaValue;
-        bitwise_xor(foregroundMask, noWeightMaskFore, weightArea);
-        distanceTransform(foregroundMask, distance, DIST_C, 3);
-        distance.convertTo(distanceU, CV_8UC1);  // 32FC1
-        bitwise_and(distanceU, weightArea, weightAreaValue);
-        normalize(weightAreaValue, weightAreaValue, 0, 255, NORM_MINMAX);
-        Mat foregroundMask_final, backgroundMast_final;
-        add(noWeightMaskFore, weightAreaValue, foregroundMask_final);
+        Mat foregroundMask_final, backgroundMast_final, maskFinal;
+        smoothMaskWeightEdge(foregroundMask, foregroundMask_final, 7); // 过渡边缘
         bitwise_not(foregroundMask_final, backgroundMast_final);
-        Mat maskFinal;
-        hconcat(foregroundMask_final, backgroundMast_final, maskFinal);
 
+        hconcat(foregroundMask_final, backgroundMast_final, maskFinal);
         Mat fmf, fmfOut;
         cvtColor(foregroundMask_final, fmf, COLOR_GRAY2BGR);
         hconcat(foreground, fmf, fmfOut);
-        string txt0 = "/home/vance/output/前景与掩模-" + strMode1 + "-" + to_string(delta) + ".jpg";
-        imwrite(txt0, fmfOut);
-        //        imshow("final foreground / background mask", maskFinal);
-        //        imwrite("/home/vance/output/前背景权重对比.jpg", maskFinal);
+//        string txt0 = "/home/vance/output/前景与掩模-" + strMode1 + "-" + to_string(k) + ".jpg";
+//        imwrite(txt0, fmfOut);
 
         Mat panof;
         pano.convertTo(panof, CV_16SC3);
@@ -312,13 +360,17 @@ int main(int argc, char* argv[])
         Mat result, resultMask;
         blender2->blend(result, resultMask);
         result.convertTo(result, CV_8U);
+
+        hconcat(fmfOut, result, result);
         imshow("blend result", result);
+
+
         string strMode2;
         if (blenderType2 == FEATHER)
             strMode2 = "羽化";
         else if (blenderType2 == MULTI_BAND)
             strMode2 = "多频带";
-        string txt2 = "/home/vance/output/前背景融合-" + strMode1 + "+" + strMode2 + "-" + to_string(delta) + ".jpg";
+        string txt2 = "/home/vance/output/前背景融合-" + strMode1 + "+" + strMode2 + "-" + to_string(k) + ".jpg";
         imwrite(txt2, result);
 
         timer.stop();

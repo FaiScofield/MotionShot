@@ -566,6 +566,29 @@ void shrinkRoi(const Mat& src, Mat& dst, int size)
 //    waitKey(0);
 }
 
+void smoothMaskWeightEdge(const cv::Mat& src, cv::Mat& dst, int size)
+{
+    assert(src.type() == CV_8UC1);
+
+    Mat noWeightMask;
+    const Mat kernel = getStructuringElement(MORPH_RECT, Size(size, size));
+    erode(src, noWeightMask, kernel, Point(-1, -1), 1, BORDER_CONSTANT); // 先腐蚀得到不要过渡的区域
+
+    Mat distance, weightArea, weightAreaValue;
+    bitwise_xor(src, noWeightMask, weightArea); // 得到需要过渡的区域
+    distanceTransform(src, distance, DIST_C, 3);
+//    imshow("distance 32F", distance);
+    distance.convertTo(distance, CV_8UC1);  //! NOTE 32FC1 to 8UC1, 注意不能乘255
+//    imshow("distance 8U", distance);
+
+    bitwise_and(distance, weightArea, weightAreaValue); // 得到过渡区域的权重
+    normalize(weightAreaValue, weightAreaValue, 0, 255, NORM_MINMAX);   // 归一化
+//    imshow("weightAreaValue", weightAreaValue);
+
+    add(noWeightMask, weightAreaValue, dst); // 不过渡区域(保留权值为1) + 过渡权区域 = 目标掩模
+//    imshow("norm distance 8U", dst);
+//    waitKey(0);
+}
 
 }  // namespace ms
 

@@ -48,10 +48,7 @@
 #include <opencv2/imgproc.hpp>
 #include <iostream>
 
-#define LOGLN(msg) (std::cout << msg << std::endl)
-#define ENABLE_LOG  0
 #define ENABLE_DEBUG_RESULT 0
-
 #if ENABLE_DEBUG_RESULT
 #include <opencv2/highgui.hpp>
 #endif
@@ -145,10 +142,9 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
     assert(img.type() == CV_16SC3);
     assert(mask.type() == CV_8U);
 
-    // 根据掩模距0元素的距离创建权重掩模, @ref cv::distanceTransform()
     if (enable_cover_) {
         UMat weight;
-        mask.getUMat().convertTo(weight, CV_32F);
+        mask.getUMat().convertTo(weight, CV_32F, 1./255.);
         multiply(weight, sharpness_, weight_map_);
         threshold(weight_map_, weight_map_, 1.f, 1.f, THRESH_TRUNC);
     } else {
@@ -161,6 +157,13 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
     int dx = tl.x - dst_roi_.x;
     int dy = tl.y - dst_roi_.y;
 
+#if ENABLE_DEBUG_RESULT
+    Mat disU;
+    dst.convertTo(disU, CV_8U);
+    imshow("dst before feed", disU);
+    imshow("dst_weight_map_ before feed", dst_weight_map_);
+#endif
+
     // 当前图像的像素乘上对应权重加到输出图像上, 并记录每个pixel对应的总权重和
     for (int y = 0; y < img.rows; ++y) {
         const Point3_<short>* src_row = img.ptr<Point3_<short>>(y);
@@ -170,12 +173,26 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
         assert(src_row != nullptr && dst_row != nullptr && weight_row != nullptr && dst_weight_row != nullptr);
 
         for (int x = 0; x < img.cols; ++x) {
-            dst_row[dx + x].x += static_cast<short>(src_row[x].x * weight_row[x]);
-            dst_row[dx + x].y += static_cast<short>(src_row[x].y * weight_row[x]);
-            dst_row[dx + x].z += static_cast<short>(src_row[x].z * weight_row[x]);
-            dst_weight_row[dx + x] += weight_row[x];
+            if (enable_cover_ && weight_row[x] == 1.f) {
+                dst_row[dx + x].x = static_cast<short>(src_row[x].x * weight_row[x]);
+                dst_row[dx + x].y = static_cast<short>(src_row[x].y * weight_row[x]);
+                dst_row[dx + x].z = static_cast<short>(src_row[x].z * weight_row[x]);
+                dst_weight_row[dx + x] = weight_row[x];
+            } else {
+                dst_row[dx + x].x += static_cast<short>(src_row[x].x * weight_row[x]);
+                dst_row[dx + x].y += static_cast<short>(src_row[x].y * weight_row[x]);
+                dst_row[dx + x].z += static_cast<short>(src_row[x].z * weight_row[x]);
+                dst_weight_row[dx + x] += weight_row[x];
+            }
         }
     }
+
+#if ENABLE_DEBUG_RESULT
+    dst.convertTo(disU, CV_8U);
+    imshow("dst after feed", disU);
+    imshow("dst_weight_map_ after feed", dst_weight_map_);
+    waitKey(0);
+#endif
 }
 
 void cvFeatherBlender::feed(const std::vector<Mat> &vImgs, const std::vector<Mat> &vMasks, const std::vector<Point> &vTopleftCorners)
@@ -186,8 +203,26 @@ void cvFeatherBlender::feed(const std::vector<Mat> &vImgs, const std::vector<Mat
 
 void cvFeatherBlender::blend(InputOutputArray dst, InputOutputArray dst_mask)
 {
+#if ENABLE_DEBUG_RESULT
+    Mat tmp;
+    dst_.convertTo(tmp, CV_8U, 255);
+    imshow("before blending dst_weight_map_", dst_weight_map_);
+    imshow("before blending dst_", tmp);
+#endif
+
     normalizeUsingWeightMap(dst_weight_map_, dst_);
-    compare(dst_weight_map_, WEIGHT_EPS, dst_mask_, CMP_GT);
+
+#if ENABLE_DEBUG_RESULT
+    dst_.convertTo(tmp, CV_8U, 255);
+    imshow("after blending dst_weight_map_", dst_weight_map_);
+    imshow("after blending dst_", tmp);
+    waitKey(0);
+#endif
+
+    if (enable_cover_)
+        dst_weight_map_.convertTo(dst_mask_, CV_8U, 255);
+    else
+        compare(dst_weight_map_, WEIGHT_EPS, dst_mask_, CMP_GT);
     cvBlender::blend(dst, dst_mask);
 }
 
@@ -270,10 +305,6 @@ void cvMultiBandBlender::prepare(Rect dst_roi)
 
 void cvMultiBandBlender::feed(InputArray _img, InputArray mask, Point tl)
 {
-#if ENABLE_LOG
-    int64 t = getTickCount();
-#endif
-
     UMat img = _img.getUMat();
     assert(img.type() == CV_16SC3 || img.type() == CV_8UC3);
     assert(mask.type() == CV_8U);
@@ -316,19 +347,8 @@ void cvMultiBandBlender::feed(InputArray _img, InputArray mask, Point tl)
     UMat img_with_border;
     copyMakeBorder(_img, img_with_border, top, bottom, left, right, BORDER_REFLECT); // 生成添加了边界的图像
 
-#if ENABLE_LOG
-    TIMER("  Add border to the source image, time: " << ((getTickCount() - t) / getTickFrequency()) << " sec");
-    t = getTickCount();
-#endif
-
     std::vector<UMat> src_pyr_laplace;
     createLaplacePyr(img_with_border, num_bands_, src_pyr_laplace);
-
-#if ENABLE_LOG
-    TIMER("  Create the source image Laplacian pyramid, time: "
-          << ((getTickCount() - t) / getTickFrequency()) << " sec");
-    t = getTickCount();
-#endif
 
     // Create the weight map Gaussian pyramid. 掩模也要添加相同的边界,并生成金字塔掩模
     UMat weight_map;
@@ -347,13 +367,6 @@ void cvMultiBandBlender::feed(InputArray _img, InputArray mask, Point tl)
 
     for (int i = 0; i < num_bands_; ++i)
         pyrDown(weight_pyr_gauss[i], weight_pyr_gauss[i + 1]);
-
-
-#if ENABLE_LOG
-    TIMER("  Create the weight map Gaussian pyramid, time: " << ((getTickCount() - t) / getTickFrequency())
-                                                             << " sec");
-    t = getTickCount();
-#endif
 
     // 扩边后的img在最终图像上对应的区域
     int y_tl = tl_new.y - dst_roi_.y;
@@ -405,10 +418,6 @@ void cvMultiBandBlender::feed(InputArray _img, InputArray mask, Point tl)
         x_br /= 2;
         y_br /= 2;
     }
-#if ENABLE_LOG
-    TIMER("  Add weighted layer of the source image to the final Laplacian pyramid layer, time: "
-          << ((getTickCount() - t) / getTickFrequency()) << " sec");
-#endif
 }
 
 
@@ -486,31 +495,31 @@ void createWeightMap(InputArray mask, float sharpness, InputOutputArray weight)
 
     distanceTransform(mask, weight, DIST_L1, 3); // CV_32F
 
-#if ENABLE_DEBUG_RESULT
-    Mat w, wu;
+//#if ENABLE_DEBUG_RESULT
+//    Mat w, wu;
 
-    cout << "weight type:" << weight.getMat().type() << endl;
-    weight.getMat().convertTo(wu, CV_8UC1);
-    hconcat(mask, wu, w);
-    imshow("mask & weight", w);
-#endif
+//    //cout << "weight type:" << weight.getMat().type() << endl;
+//    weight.getMat().convertTo(wu, CV_8UC1, 255);
+//    hconcat(mask, wu, w);
+//    imshow("mask & weight", w);
+//#endif
 
     UMat tmp;
     multiply(weight, sharpness, tmp);
     threshold(tmp, weight, 1.f, 1.f, THRESH_TRUNC);
 
-#if ENABLE_DEBUG_RESULT
-    cout << "tmp type:" << tmp.type() << endl;
-    cout << "weight type:" << weight.type() << endl;
+//#if ENABLE_DEBUG_RESULT
+//    //cout << "tmp type:" << tmp.type() << endl;
+//    //cout << "weight type:" << weight.type() << endl;
 
-    Mat tmp1, tmp2;
+//    Mat tmp1, tmp2;
 
-    normalize(weight, tmp1, 0, 255, NORM_MINMAX);
-    Mat w2;
-    hconcat(tmp, tmp1, w2);
-    imshow("weight * sharpness & threshold weight", w2);
-    waitKey(0);
-#endif
+//    normalize(weight, tmp1, 0, 255, NORM_MINMAX);
+//    Mat w2;
+//    hconcat(tmp, tmp1, w2);
+//    imshow("weight * sharpness & threshold weight", w2) ;
+//    waitKey(0);
+//#endif
 }
 
 

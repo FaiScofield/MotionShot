@@ -96,6 +96,7 @@ int main(int argc, char* argv[])
 #endif
 
     cvtColor(pano, panoGray, COLOR_BGR2GRAY);
+    cout << " - paono size = " << pano.size() << endl;
 
     /// 再背景建模
     Ptr<BackgroundSubtractorMOG2> detector = createBackgroundSubtractorMOG2(vImgsToProcess.size(), 25.0, false); //! TODO. 输入背景
@@ -113,9 +114,10 @@ int main(int argc, char* argv[])
         Mat diff, background;
         Mat frameWarped, frameWarpedGray, warpResult;
 #if STATIC_SCENE
-        detector->apply(frame/*Gray*/, diff);
+        detector->apply(frame/*Gray*/, diff, 0);
         detector->getBackgroundImage(background);
         frameWarped = frame;
+        imshow("background", background);
 #else
         warpPerspective(frame, frameWarped, vHomographies[i], pano.size()); //! TODO 解决像素为0的区域的背景问题
 
@@ -132,25 +134,25 @@ int main(int argc, char* argv[])
             continue;
         }
         // 形态学操作, 去除噪声
-        Mat kernel1 = getStructuringElement(MORPH_RECT, Size(7, 7));
+        Mat kernel1 = getStructuringElement(MORPH_RECT, Size(5, 5));
         Mat kernel2 = getStructuringElement(MORPH_RECT, Size(7, 7));
         morphologyEx(diff, diff, MORPH_OPEN, kernel1);
         morphologyEx(diff, diff, MORPH_CLOSE, kernel2);
 
         // find contours
         Mat frame_contours = frameWarped.clone();
-        vector<vector<Point>> contours, contoursFilter;
+        vector<vector<Point>> contours, contoursFilter; //! TODO contoursFilter
         findContours(diff, contours, RETR_EXTERNAL, CHAIN_APPROX_NONE);
         if (contours.empty())
             continue;
 
         contoursFilter.reserve(contours.size());
-        const int th_minArera = 0.01 * pano.size().area();
+        const int th_minArera = 0.05 * pano.size().area();
         for (size_t i = 0; i < contours.size(); ++i) {
             if (contours[i].size() > th_minArera * 0.2)
                 contoursFilter.push_back(contours[i]);
         }
-        drawContours(frame_contours, contours, -1, Scalar(2500, 0, 0), 1);
+        drawContours(frame_contours, contours, -1, Scalar(250, 0, 0), 1);
         drawContours(frame_contours, contoursFilter, -1, Scalar(0, 255, 0), 2);
 
         // calculate blobs

@@ -44,7 +44,7 @@ int main(int argc, char** argv)
     boost::filesystem::path path(dataPath);
     vector<Mat> vImags, vMaskGTs;
     if (boost::filesystem::is_directory(path)) {
-        g_type = DATASET;
+        g_type = LASIESTA;
         ReadImageSequence_lasiesta(dataPath, vImags, vMaskGTs);
     } else {
         g_type = VIDEO;
@@ -80,9 +80,9 @@ int main(int argc, char** argv)
             break;
 
         // OpenCV自带OTSU
-        BGDif.BackgroundDiff(pFrame, pFroundImg, pBackgroundImg, nFrmNum, CV_THRESH_OTSU);
+        BGDif.BackgroundDiff(pFrame, pFroundImg, pBackgroundImg, nFrmNum, THRESH_OTSU);
         // 阈值筛选后的OTSU
-        BGDif.BackgroundDiff(pFrame, pFroundImg_c, pBackgroundImg_c, nFrmNum, CV_THRESH_BINARY);
+        BGDif.BackgroundDiff(pFrame, pFroundImg_c, pBackgroundImg_c, nFrmNum, THRESH_BINARY);
 
         // 显示图像
         imshow("Source Video", pFrame);

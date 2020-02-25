@@ -62,7 +62,7 @@ using namespace std;
  *   void
 =====================================================================
 */
-void BGDiff::BackgroundDiff(Mat src, Mat& imgForeground, Mat& imgBackground, int nFrmNum,
+void BGDiff::BackgroundDiff(const Mat& src, Mat& imgForeground, Mat& imgBackground, int nFrmNum,
                             int threshold_method, double updateSpeed)
 {
     // 源图像的灰度图像
@@ -208,7 +208,7 @@ void BGDiff::BackgroundDiff(Mat src, Mat& imgForeground, Mat& imgBackground, int
 =====================================================================
 */
 
-void BGDiff::Otsu(Mat src, int& thresholdValue, bool ToShowValue)
+void BGDiff::Otsu(const Mat& src, int& thresholdValue, bool ToShowValue)
 {
     // 输入图像是否为灰度图的标志位
     // the Flag Bit of source image is gray image or not
@@ -260,7 +260,7 @@ void BGDiff::Otsu(Mat src, int& thresholdValue, bool ToShowValue)
     int nc = src.cols * src.channels();
 
     for (int j = 0; j < nr; j++) {
-        uchar* ImgData = src.ptr<uchar>(j);
+        const uchar* ImgData = src.ptr<uchar>(j);
 
         for (int i = 0; i < nc; i++) {
             //灰度统计 '&255'防止指针溢出
@@ -325,6 +325,13 @@ void BGDiff::Otsu(Mat src, int& thresholdValue, bool ToShowValue)
              << ", Returned thresholdValue = " << thresholdValue << '\n'
              << endl;
     }
+}
+
+
+void BGDiff::apply(const Mat &input, Mat &mask)
+{
+    Mat fore, back;
+    BackgroundDiff(input, fore, back, nFrameCount++);
 }
 
 }

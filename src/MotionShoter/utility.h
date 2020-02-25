@@ -63,6 +63,8 @@ cv::Rect resultRoi(const std::vector<cv::Point>& corners, const std::vector<cv::
 
 void shrinkRoi(const cv::Mat& src, cv::Mat& dst, int size);
 
+void smoothMaskWeightEdge(const cv::Mat& src, cv::Mat& dst, int size);
+
 }  // namespace ms
 
 #endif  // UTILITY_HPP
