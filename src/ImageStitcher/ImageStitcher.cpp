@@ -139,7 +139,7 @@ bool ImageStitcher::stitch(const Mat& img1, const Mat& img2, Mat& pano, Mat& war
 
     imshow("Pano with blending", pano);
     waitKey(0);
-//    return (!pano.empty());
+    return (!pano.empty());
 }
 
 Mat ImageStitcher::computeHomography(const Mat& img1, const Mat& img2)

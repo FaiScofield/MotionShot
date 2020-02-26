@@ -7,6 +7,9 @@ target_link_libraries(test_detector ${LIB_MotionShot})
 add_executable(test_detector_denseFlow test_detector_denseFlow.cpp)
 target_link_libraries(test_detector_denseFlow ${LIB_MotionShot})
 
+add_executable(test_detector_sparseFlow test_detector_sparseFlow.cpp)
+target_link_libraries(test_detector_sparseFlow ${LIB_MotionShot})
+
 add_executable(test_detector_acc_mog test_detector_acc_mog.cpp)
 target_link_libraries(test_detector_acc_mog ${LIB_MotionShot})
 

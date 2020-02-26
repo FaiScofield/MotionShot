@@ -30,9 +30,7 @@ int main(int argc, char* argv[])
         parser(argc, argv,
                "{type      t|VIDEO|value input type: VIDEO, LASSESTA, HUAWEI}"
                "{folder    f| |data folder or video file for type LASSESTA/HUAWEI/VIDEO}"
-               "{dense     d|true|dense flow (otherwise sparse flow)}"
                "{size      s|5|kernel size for morphology operators}"
-               "{showGT    g|false|if show ground for type DATASET}"
                "{scale     c|1|scale to resize image, 0.15 for type HUAWEI}"
                "{flip      p|0|flip image for type VIDEO, 0(x), +(y), -(xy)}"
                "{rotate    r|-1|rotate image for type VIDEO, r = RotateFlags(0, 1, 2)}"
@@ -54,20 +52,16 @@ int main(int argc, char* argv[])
     double scale = parser.get<double>("scale");
     int flip = parser.get<int>("flip");
     int rotate = parser.get<int>("rotate");
-    bool showGT = parser.get<bool>("showGT");
     cout << " - type = " << str_type << endl;
     cout << " - folder = " << str_folder << endl;
 
     InputType inputType;
     if (str_type == "video" || str_type == "VIDEO") {
         inputType = VIDEO;
-        showGT = false;
     } else if (str_type == "lasiesta" || str_type == "LASIESTA") {
         inputType = LASIESTA;
-        cout << " - showGT = " << showGT << endl;
     } else if (str_type == "huawei" || str_type == "HUAWEI") {
         inputType = HUAWEI;
-        showGT = false;
     } else {
         cerr << "[Error] Unknown input type for " << str_type << endl;
         return -1;
@@ -113,11 +107,9 @@ int main(int argc, char* argv[])
     cvtColor(pano, panoGray, COLOR_BGR2GRAY);
 
     /// detect moving frontground
-    bool dense = parser.get<bool>("dense");
 #ifdef USE_OPENCV4
     Ptr<DISOpticalFlow> detector1 = DISOpticalFlow::create();
-    Ptr<VariationalRefinement> detector2 = VariationalRefinement::create();
-//    Ptr<FarnebackOpticalFlow> detector2 = FarnebackOpticalFlow::create();
+    Ptr<FarnebackOpticalFlow> detector2 = FarnebackOpticalFlow::create();
 #else
     Ptr<DualTVL1OpticalFlow> detector1 = DualTVL1OpticalFlow::create();
     Ptr<FarnebackOpticalFlow> detector2 = FarnebackOpticalFlow::create();
@@ -265,7 +257,11 @@ int main(int argc, char* argv[])
 
         currentFrame.copyTo(lastFrame);
     }
-    cout << "[Timer] Cost time in dense flow (DIS/Farneback): " << t1 << "/" << t2 << endl;
+#ifdef USE_OPENCV4
+    TIMER("Cost time in dense flow (DIS/Farneback): " << t1 << "/" << t2);
+#else
+    TIMER("Cost time in dense flow (DualTVL1/Farneback): " << t1 << "/" << t2);
+#endif
 
 //    writer.release();
     destroyAllWindows();

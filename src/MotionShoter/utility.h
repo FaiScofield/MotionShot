@@ -65,6 +65,9 @@ void shrinkRoi(const cv::Mat& src, cv::Mat& dst, int size);
 
 void smoothMaskWeightEdge(const cv::Mat& src, cv::Mat& dst, int size);
 
+// 双线性插值
+float getPixelValue(const cv::Mat& img, float x, float y);
+
 }  // namespace ms
 
 #endif  // UTILITY_HPP

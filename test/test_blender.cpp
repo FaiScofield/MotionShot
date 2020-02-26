@@ -106,7 +106,7 @@ int main(int argc, char* argv[])
     extractImagesToStitch(vImages, vImgsToProcess, vIdxToProcess, vvIdxPerIter, minFores, maxFores);
 
     timer.stop();
-    TIMER("系统初始化耗时(s): " << timer.getTimeSec() / timer.getCounter());
+    TIMER("系统初始化耗时(s): " << timer.getTimeSec());
 
     //! TODO  计算出来的光流对应的图像和序号还没弄好!!!
 #if USE_FLOW_WEIGHT
@@ -147,7 +147,7 @@ int main(int argc, char* argv[])
 //    waitKey(0);
 #endif
 
-    for (int k = minFores; k <= maxFores; ++k) { // k为前景数量
+    for (size_t k = minFores; k <= maxFores; ++k) { // k为前景数量
         timer.start();
 
         // 1.获取前景区域

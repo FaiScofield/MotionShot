@@ -590,6 +590,24 @@ void smoothMaskWeightEdge(const cv::Mat& src, cv::Mat& dst, int size)
 //    waitKey(0);
 }
 
+
+/**
+ * get a gray scale value from reference image (bi-linear interpolated)
+ * @param [in] img the input image
+ * @param [in] x the position of x in the image
+ * @param [in] y the position of y in the image
+ * @return a float data for grayscale value in (x,y)
+ */
+float getPixelValue(const cv::Mat& img, float x, float y)
+{
+    uchar* data = &img.data[int(y) * img.step + int(x)];
+    float xx = x - floor(x);
+    float yy = y - floor(y);
+    return float((1 - xx) * (1 - yy) * data[0] + xx * (1 - yy) * data[1] +
+                 (1 - xx) * yy * data[img.step] + xx * yy * data[img.step + 1]);
+}
+
+
 }  // namespace ms
 
 #endif  // UTILITY_HPP
