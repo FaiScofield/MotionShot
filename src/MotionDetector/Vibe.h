@@ -30,10 +30,10 @@ namespace ms
 class ViBe : public BaseMotionDetector
 {
 public:
-    ViBe(int num_sam = 20,  // Number of pixel's samples
-         int min_match = 2, // Match Number of make pixel as Background
-         int r = 20,        // Radius of pixel value
-         int rand_sam = 16);// the probability of random sample
+    ViBe(int num_sam = 20,    // Number of pixel's samples
+         int min_match = 2,   // Match Number of make pixel as Background
+         int r = 20,          // Radius of pixel value
+         int rand_sam = 16);  // the probability of random sample
     ~ViBe();
 
     // 背景模型初始化
@@ -90,4 +90,28 @@ private:
     int random_sample;
 };
 
-}
+
+#define NUM_SAMPLES 20       //每个像素点的样本个数
+#define MIN_MATCHES 2        //#min指数
+#define RADIUS 20            // Sqthere半径
+#define SUBSAMPLE_FACTOR 16  //子采样概率
+
+
+class ViBe_BGS
+{
+public:
+    ViBe_BGS(void);
+    ~ViBe_BGS(void);
+
+    void init(const cv::Mat _image);  //初始化
+    void processFirstFrame(const cv::Mat _image);
+    void testAndUpdate(const cv::Mat _image);  //更新
+    cv::Mat getMask(void) { return m_mask; }
+
+private:
+    cv::Mat m_samples[NUM_SAMPLES];
+    cv::Mat m_foregroundMatchCount;
+    cv::Mat m_mask;
+};
+
+}  // namespace ms

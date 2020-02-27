@@ -9,9 +9,8 @@
 #include <opencv2/stitching.hpp>
 #include <boost/filesystem.hpp>
 #include <opencv2/tracking.hpp>
-#include <opencv2/gpu/gpu.hpp>  // cv::gpu::calcOpticalFlowBM()
-
-cv::cvCalcOpticalFlowHS()
+//#include <opencv2/gpu/gpu.hpp>  // cv::gpu::calcOpticalFlowBM()
+//cv::cvCalcOpticalFlowHS()
 
 using namespace std;
 using namespace cv;

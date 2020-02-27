@@ -414,28 +414,28 @@ Mat optical_flow_horn_schunk(Mat img1, Mat img2, float lambda, int iter)
     return color_coding(u_current, v_current);
 }
 
-template <typename T>
 void hornSchunck(const Mat& src1, const Mat& src2, Mat& dstX, Mat& dstY, const double alpha, const uint iterations)
 {
-    T laplaceu, laplacev;
-    const size_t width = src1.width();
-    const size_t height = src1.height();
+    uchar laplaceu, laplacev;
+    const size_t width = src1.cols;
+    const size_t height = src1.rows;
+    ;
 
-    Mat dx(width, height);
-    Mat dy(width, height);
-    Mat dt(width, height);
+    Mat dx(width, height, CV_8UC1);
+    Mat dy(width, height, CV_8UC1);
+    Mat dt(width, height, CV_8UC1);
 
-    Mat tmpX(width, height);
-    Mat tmpY(width, height);
+    Mat tmpX(width, height, CV_8UC1);
+    Mat tmpY(width, height, CV_8UC1);
 
     // gradient calculation
     for (uint y = 0; y < height; ++y) {
         for (uint x = 0; x < width; ++x) {
-            dx(x, y) = .5 * (src1.getMirrored(x + 1, y) - src1.getMirrored(x - 1, y) +
-                             src2.getMirrored(x + 1, y) - src2.getMirrored(x - 1, y));
-            dy(x, y) = .5 * (src1.getMirrored(x, y + 1) - src1.getMirrored(x, y - 1) +
-                             src2.getMirrored(x, y + 1) - src2.getMirrored(x, y - 1));
-            dt(x, y) = src2(x, y) - src1(x, y);
+            dx.at<uchar>(x, y) = .5 * (src1.at<uchar>(x + 1, y) - src1.at<uchar>(x - 1, y) +
+                                       src2.at<uchar>(x + 1, y) - src2.at<uchar>(x - 1, y));
+            dy.at<uchar>(x, y) = .5 * (src1.at<uchar>(x, y + 1) - src1.at<uchar>(x, y - 1) +
+                                       src2.at<uchar>(x, y + 1) - src2.at<uchar>(x, y - 1));
+            dt.at<uchar>(x, y) = src2.at<uchar>(x, y) - src1.at<uchar>(x, y);
         }
     }
 
@@ -443,19 +443,25 @@ void hornSchunck(const Mat& src1, const Mat& src2, Mat& dstX, Mat& dstY, const d
     for (uint i = 0; i < iterations; ++i) {
         for (uint y = 0; y < height; ++y) {
             for (uint x = 0; x < width; ++x) {
-                laplaceu = (dstX.getMirrored(x + 1, y) - 2 * dstX(x, y) + dstX.getMirrored(x - 1, y)) +
-                           (dstX.getMirrored(x, y + 1) - 2 * dstX(x, y) + dstX.getMirrored(x, y - 1));
-                laplacev = (dstY.getMirrored(x + 1, y) - 2 * dstY(x, y) + dstY.getMirrored(x - 1, y)) +
-                           (dstY.getMirrored(x, y + 1) - 2 * dstY(x, y) + dstY.getMirrored(x, y - 1));
+                laplaceu =
+                    (dstX.at<uchar>(x + 1, y) - 2 * dstX.at<uchar>(x, y) + dstX.at<uchar>(x - 1, y)) +
+                    (dstX.at<uchar>(x, y + 1) - 2 * dstX.at<uchar>(x, y) + dstX.at<uchar>(x, y - 1));
+                laplacev =
+                    (dstY.at<uchar>(x + 1, y) - 2 * dstY.at<uchar>(x, y) + dstY.at<uchar>(x - 1, y)) +
+                    (dstY.at<uchar>(x, y + 1) - 2 * dstY.at<uchar>(x, y) + dstY.at<uchar>(x, y - 1));
 
-                tmpX(x, y) = (-dx(x, y) * dt(x, y) - (dx(x, y) * dy(x, y) * dstY(x, y) - alpha * laplaceu)) /
-                             (dx(x, y) * dx(x, y) + alpha * 8.);
-                tmpY(x, y) = (-dy(x, y) * dt(x, y) - (dx(x, y) * dy(x, y) * dstX(x, y) - alpha * laplacev)) /
-                             (dy(x, y) * dy(x, y) + alpha * 8.);
+                tmpX.at<uchar>(x, y) =
+                    (-dx.at<uchar>(x, y) * dt.at<uchar>(x, y) -
+                     (dx.at<uchar>(x, y) * dy.at<uchar>(x, y) * dstY.at<uchar>(x, y) - alpha * laplaceu)) /
+                    (dx.at<uchar>(x, y) * dx.at<uchar>(x, y) + alpha * 8.);
+                tmpY.at<uchar>(x, y) =
+                    (-dy.at<uchar>(x, y) * dt.at<uchar>(x, y) -
+                     (dx.at<uchar>(x, y) * dy.at<uchar>(x, y) * dstX.at<uchar>(x, y) - alpha * laplacev)) /
+                    (dy.at<uchar>(x, y) * dy.at<uchar>(x, y) + alpha * 8.);
             }
         }
-        dstX.swap(tmpX);
-        dstY.swap(tmpY);
+        dstX = tmpX.clone();
+        dstY = tmpY.clone();
     }
 }
 

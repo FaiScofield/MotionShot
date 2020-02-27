@@ -192,7 +192,7 @@ int main(int argc, char* argv[])
          goodFeaturesToTrack(lastFrame, vKPsLast, 2000, 0.05, 2, maskk);
         opticalFlowCalculator->calc(lastFrame, currentFrame, vKPsLast, vKPsCurr, status);
 //        calcOpticalFlowPyrLK(lastFrame, currentFrame, vKPsLast, vKPsCurr, status, err);
-        calcOpticalFlowBM();
+//        calcOpticalFlowBM();
         Mat flow = vImages[i].clone();
         for (size_t j = 0, iend = status.size(); j < iend; j++) {
             if (status[j]) {

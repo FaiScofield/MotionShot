@@ -106,6 +106,19 @@ int main(int argc, char* argv[])
     VideoWriter writer("/home/vance/output/result.avi", VideoWriter::fourcc('M', 'J', 'P', 'G'), 25,
                        Size(vImages[0].cols, vImages[0].rows * 2));
 #endif
+    // 试试把所有输入图像做一个均/中值滤波 获得一个不变的背景
+    Mat fixBackground = Mat::zeros(pano.size(), CV_32FC3);
+    for (size_t i = 0, iend = vImgsToProcess.size(); i < iend; ++i) {
+        Mat framef;
+        vImgsToProcess[i].convertTo(framef, CV_32FC3, 1./255.1);
+        add(fixBackground, framef, fixBackground);
+    }
+    normalize(fixBackground, fixBackground, 1.0, 0.0, NORM_MINMAX);
+    imshow("fixBackground", fixBackground);
+//    waitKey(0);
+    Mat firstMask;
+    detector->apply(fixBackground, firstMask, 0);
+
     for (size_t i = 0, iend = vImgsToProcess.size(); i < iend; ++i) {
         const Mat& frame = vImgsToProcess[i];
         Mat frameGray;
@@ -114,10 +127,10 @@ int main(int argc, char* argv[])
         Mat diff, background;
         Mat frameWarped, frameWarpedGray, warpResult;
 #if STATIC_SCENE
-        detector->apply(frame/*Gray*/, diff, 0);
-        detector->getBackgroundImage(background);
-        frameWarped = frame;
-        imshow("background", background);
+        detector->apply(frame, diff, 0);
+//        detector->getBackgroundImage(background);
+//        frameWarped = frame;
+//        imshow("background", background);
 #else
         warpPerspective(frame, frameWarped, vHomographies[i], pano.size()); //! TODO 解决像素为0的区域的背景问题
 
@@ -134,10 +147,10 @@ int main(int argc, char* argv[])
             continue;
         }
         // 形态学操作, 去除噪声
-        Mat kernel1 = getStructuringElement(MORPH_RECT, Size(5, 5));
-        Mat kernel2 = getStructuringElement(MORPH_RECT, Size(7, 7));
-        morphologyEx(diff, diff, MORPH_OPEN, kernel1);
-        morphologyEx(diff, diff, MORPH_CLOSE, kernel2);
+//        Mat kernel1 = getStructuringElement(MORPH_RECT, Size(5, 5));
+//        Mat kernel2 = getStructuringElement(MORPH_RECT, Size(7, 7));
+//        morphologyEx(diff, diff, MORPH_OPEN, kernel1);
+//        morphologyEx(diff, diff, MORPH_CLOSE, kernel2);
 
         // find contours
         Mat frame_contours = frameWarped.clone();
@@ -149,7 +162,7 @@ int main(int argc, char* argv[])
         contoursFilter.reserve(contours.size());
         const int th_minArera = 0.05 * pano.size().area();
         for (size_t i = 0; i < contours.size(); ++i) {
-            if (contours[i].size() > th_minArera * 0.2)
+            if (contours[i].size() > th_minArera * 0.1)
                 contoursFilter.push_back(contours[i]);
         }
         drawContours(frame_contours, contours, -1, Scalar(250, 0, 0), 1);
@@ -160,13 +173,17 @@ int main(int argc, char* argv[])
         int maxArea = 0;
         for (int i = 0, iend = contours.size(); i < iend; ++i) {
             const Rect blobi = boundingRect(contours[i]);
-            if (blobi.area() < th_minArera)
+            if (blobi.area() < th_minArera || blobi.area() >= frame.size().area())
                 continue;
             if (blobi.area() > maxArea)
                 maxArea = blobi.area();
             blobs.push_back(blobi);
         }
 //        cout << " - max blob area: " << maxArea << endl;
+
+
+        if (blobs.empty())
+            continue;
 
         Mat diff_blobs, tmp, output;
         cvtColor(diff, diff_blobs, COLOR_GRAY2BGR);
@@ -182,6 +199,23 @@ int main(int argc, char* argv[])
 
         vconcat(frame_contours, diff_blobs, output);
         imshow("result", /*diff*/output);
+
+        //! TODO grabCut
+        Mat cutMask, cutBgdModel, cutFgdModel;
+//        cutMask = Mat::zeros(frame.size(), CV_8UC1);
+//        cutMask(blobs[0]).setTo(Scalar(GC_PR_FGD));
+        grabCut(frame, cutMask, blobs[0], cutBgdModel, cutFgdModel, 3, GC_INIT_WITH_RECT);
+        imshow("cutMask orignal", cutMask * 50);
+        Mat cutBinMask = Mat(cutMask.size(), CV_8UC1);
+        Mat tmpMask, cutFrame;
+        compare(cutMask, 50, tmpMask, CMP_EQ);
+        cutBinMask.setTo(Scalar(255), tmpMask);
+        frame.copyTo(cutFrame, cutBinMask);
+        rectangle(cutFrame, blobs[0], Scalar(0, 0, 255), 1);
+        imshow("cutFrame", cutFrame);
+        imshow("cutMask", cutBinMask);
+
+
         if (waitKey(300) == 27)
             break;
 

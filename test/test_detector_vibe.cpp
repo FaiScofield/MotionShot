@@ -60,9 +60,10 @@ int main(int argc, char* argv[])
     }
 
     ViBe vibe;
+    ViBe_BGS vibe_bgs;
 
     bool firstFrame = true;
-    Mat frame, gray, mask, mask_gt, output;
+    Mat frame, gray, mask, mask2, mask_gt, output;
     if (g_type == VIDEO) {
         vc >> frame;
         while (!frame.empty()) {
@@ -70,10 +71,20 @@ int main(int argc, char* argv[])
             if (firstFrame) {
                 vibe.init(gray);
                 vibe.ProcessFirstFrame(gray);
+
+                vibe_bgs.init(gray);
+                vibe_bgs.processFirstFrame(gray);
+
                 firstFrame = false;
             } else {
                 vibe.Run(gray);
                 mask = vibe.getFGModel();
+
+                vibe_bgs.testAndUpdate(gray);
+                mask2 = vibe_bgs.getMask();
+                morphologyEx(mask2, mask2, MORPH_OPEN, Mat());
+                imshow("ViBe Method 2", mask2);
+
                 if (!mask.empty()) {
                     Mat mask_color;
                     cvtColor(mask, mask_color, COLOR_GRAY2BGR);
