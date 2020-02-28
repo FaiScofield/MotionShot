@@ -276,8 +276,8 @@ void resizeFlipRotateImages(vector<Mat>& imgs, double scale, int flip, int rotat
 }
 
 void extractImagesToStitch(const vector<Mat>& vImages, vector<Mat>& vImagesToProcess,
-                           vector<size_t>& vIdxToProcess, vector<vector<size_t>>& vvIdxPerIter,
-                           size_t minFores = 3, size_t maxFores = 8)
+                           vector<int>& vIdxToProcess, vector<vector<int>>& vvIdxPerIter,
+                           int minFores = 3, int maxFores = 8)
 {
     assert(minFores > 2 && minFores <= maxFores);
 
@@ -285,7 +285,7 @@ void extractImagesToStitch(const vector<Mat>& vImages, vector<Mat>& vImagesToPro
     vIdxToProcess.clear();
     vvIdxPerIter.clear();
 
-    const size_t N = vImages.size();
+    const int N = vImages.size();
     if (maxFores > N) {
         cout << "输入图片数(" << N << ")少于最大前景数(" << maxFores << "), 全部处理." << endl;
         maxFores = N;
@@ -295,13 +295,13 @@ void extractImagesToStitch(const vector<Mat>& vImages, vector<Mat>& vImagesToPro
     vIdxToProcess.reserve(maxFores - minFores);
     vvIdxPerIter.reserve(maxFores - minFores);
 
-    std::set<size_t> sIdxToProcess;
-    for (size_t k = minFores; k <= maxFores; ++k) {
-        size_t d = N / k;
-        size_t idx = 0;
+    std::set<int> sIdxToProcess;
+    for (int k = minFores; k <= maxFores; ++k) {
+        int d = cvRound(N / k);
+        int idx = 0;
         cout << "[前景数k = " << k << ", 间隔数d = " << d << "], 筛选的帧序号为: ";
 
-        vector<size_t> vIdxThisIter;
+        vector<int> vIdxThisIter;
         vIdxThisIter.reserve(k);
         while (idx < N) {
             sIdxToProcess.insert(idx);
@@ -309,13 +309,20 @@ void extractImagesToStitch(const vector<Mat>& vImages, vector<Mat>& vImagesToPro
             cout << idx << ", ";
             idx += d;
         }
-        cout << endl;
+        cout << " 实际个数 = " << vIdxThisIter.size();
+
+        if (vIdxThisIter.size() > k) {
+            vIdxThisIter.pop_back();
+            cout << ", 实际个数过多, 去除最后一帧." << endl;
+        } else {
+            cout << endl;
+        }
 
         vvIdxPerIter.push_back(vIdxThisIter);
     }
 
-    vIdxToProcess = vector<size_t>(sIdxToProcess.begin(), sIdxToProcess.end());
-    for (size_t i = 0, iend = vIdxToProcess.size(); i < iend; ++i)
+    vIdxToProcess = vector<int>(sIdxToProcess.begin(), sIdxToProcess.end());
+    for (int i = 0, iend = vIdxToProcess.size(); i < iend; ++i)
         vImagesToProcess.push_back(vImages[vIdxToProcess[i]]);
 }
 
@@ -569,6 +576,11 @@ void shrinkRoi(const Mat& src, Mat& dst, int size)
 void smoothMaskWeightEdge(const cv::Mat& src, cv::Mat& dst, int size)
 {
     assert(src.type() == CV_8UC1);
+
+    if (size < 1) {
+        dst = src.clone();
+        return;
+    }
 
     Mat noWeightMask;
     const Mat kernel = getStructuringElement(MORPH_RECT, Size(size, size));

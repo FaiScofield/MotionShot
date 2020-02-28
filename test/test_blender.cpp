@@ -99,10 +99,10 @@ int main(int argc, char* argv[])
     });
 
     /// calc the result in different gaps
-    size_t maxFores = 8, minFores = 3;  // 前景最多存在8个, 最少3个
+    int maxFores = 8, minFores = 3;  // 前景最多存在8个, 最少3个
     vector<Mat> vImgsToProcess;
-    vector<size_t> vIdxToProcess;
-    vector<vector<size_t>> vvIdxPerIter;
+    vector<int> vIdxToProcess;
+    vector<vector<int>> vvIdxPerIter;
     extractImagesToStitch(vImages, vImgsToProcess, vIdxToProcess, vvIdxPerIter, minFores, maxFores);
 
     timer.stop();
@@ -147,16 +147,16 @@ int main(int argc, char* argv[])
 //    waitKey(0);
 #endif
 
-    for (size_t k = minFores; k <= maxFores; ++k) { // k为前景数量
+    for (int k = minFores; k <= maxFores; ++k) { // k为前景数量
         timer.start();
 
         // 1.获取前景区域
-        const vector<size_t>& vIdxThisIter = vvIdxPerIter[k - minFores];
+        const vector<int>& vIdxThisIter = vvIdxPerIter[k - minFores];
         vector<Rect> vBlobs;
         vector<bool> vValid;
         vector<Mat> vForeMaskPrecise;
         for (size_t i = 0; i < vIdxThisIter.size(); ++i) {
-            const size_t& imgIdx = vIdxThisIter[i];
+            const int& imgIdx = vIdxThisIter[i];
 //            const auto it = std::find(vIdxToProcess.begin(), vIdxToProcess.end(), imgIdx);
 //            const int idx = std::distance(vIdxToProcess.begin(), it);
 //            const Mat& frame = vImgsToProcess[idx];

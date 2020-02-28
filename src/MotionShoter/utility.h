@@ -45,8 +45,8 @@ void resizeFlipRotateImages(std::vector<cv::Mat>& imgs, double scale, int flip, 
 // 根据前景需要的数量提取出必要的帧进行处理. TODO 需要对输入进行筛选, 去掉模糊/不合适的图像
 
 void extractImagesToStitch(const std::vector<cv::Mat>& vImages, std::vector<cv::Mat>& vImagesToProcess,
-                           std::vector<size_t>& vIdxToProcess, std::vector<std::vector<size_t>>& vvIdxPerIter,
-                           size_t minFores = 3, size_t maxFores = 8);
+                           std::vector<int>& vIdxToProcess, std::vector<std::vector<int>>& vvIdxPerIter,
+                           int minFores = 3, int maxFores = 8);
 
 void flowToColor(const cv::Mat& flow, cv::Mat& color);
 

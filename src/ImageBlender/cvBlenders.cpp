@@ -174,6 +174,7 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
 
         for (int x = 0; x < img.cols; ++x) {
             if (enable_cover_ && weight_row[x] == 1.f) {
+                // 时序后覆盖前
                 dst_row[dx + x].x = static_cast<short>(src_row[x].x * weight_row[x]);
                 dst_row[dx + x].y = static_cast<short>(src_row[x].y * weight_row[x]);
                 dst_row[dx + x].z = static_cast<short>(src_row[x].z * weight_row[x]);
