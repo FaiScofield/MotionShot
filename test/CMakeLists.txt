@@ -40,3 +40,6 @@ target_link_libraries(test_tracker ${LIB_MotionShot})
 
 add_executable(test_shoter_lasiesta test_shoter_lasiesta.cpp)
 target_link_libraries(test_shoter_lasiesta ${LIB_MotionShot})
+
+add_executable(test_shoter_huawei_static test_shoter_huawei_static.cpp)
+target_link_libraries(test_shoter_huawei_static ${LIB_MotionShot})

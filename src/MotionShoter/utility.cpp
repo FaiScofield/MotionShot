@@ -297,11 +297,11 @@ void extractImagesToStitch(const vector<Mat>& vImages, vector<Mat>& vImagesToPro
 
     std::set<int> sIdxToProcess;
     for (int k = minFores; k <= maxFores; ++k) {
-        int d = cvRound(N / k);
+        int d = cvCeil(N / k);
         int idx = 0;
         cout << "[前景数k = " << k << ", 间隔数d = " << d << "], 筛选的帧序号为: ";
 
-        vector<int> vIdxThisIter;
+        vector<int> vIdxThisIter, vIdxThisIterSubset;
         vIdxThisIter.reserve(k);
         while (idx < N) {
             sIdxToProcess.insert(idx);
@@ -312,13 +312,14 @@ void extractImagesToStitch(const vector<Mat>& vImages, vector<Mat>& vImagesToPro
         cout << " 实际个数 = " << vIdxThisIter.size();
 
         if (vIdxThisIter.size() > k) {
-            vIdxThisIter.pop_back();
-            cout << ", 实际个数过多, 去除最后一帧." << endl;
+            vIdxThisIterSubset = vector<int>(vIdxThisIter.begin(), vIdxThisIter.begin() + k);
+            cout << ", 实际个数过多, 去除最后几帧." << endl;
         } else {
+            vIdxThisIterSubset = vIdxThisIter;
             cout << endl;
         }
 
-        vvIdxPerIter.push_back(vIdxThisIter);
+        vvIdxPerIter.push_back(vIdxThisIterSubset);
     }
 
     vIdxToProcess = vector<int>(sIdxToProcess.begin(), sIdxToProcess.end());

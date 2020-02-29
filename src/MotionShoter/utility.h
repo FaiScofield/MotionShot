@@ -40,7 +40,7 @@ void ReadImageSequence_video(const std::string& video, std::vector<cv::Mat>& img
                              int startIndex = 0, int num = -1);
 
 // 输入图像的缩放,翻转和旋转. 主要是输入视频可能不正.
-void resizeFlipRotateImages(std::vector<cv::Mat>& imgs, double scale, int flip, int rotate);
+void resizeFlipRotateImages(std::vector<cv::Mat>& imgs, double scale, int flip = 0, int rotate = -1);
 
 // 根据前景需要的数量提取出必要的帧进行处理. TODO 需要对输入进行筛选, 去掉模糊/不合适的图像
 
