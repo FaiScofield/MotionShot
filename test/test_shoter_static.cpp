@@ -50,7 +50,7 @@ int main(int argc, char* argv[])
         inputType = VIDEO;
         showGT = false;
     } else if (str_type == "lasisesta" || str_type == "LASISESTA") {
-        inputType = LASISESTA;
+        inputType = LASIESTA;
         cout << " - showGT = " << showGT << endl;
     } else if (str_type == "huawei" || str_type == "HUAWEI") {
         inputType = HUAWEI;
@@ -62,8 +62,8 @@ int main(int argc, char* argv[])
 
     //// read images
     vector<Mat> vImages, vGTs;
-    if (inputType == LASISESTA) {
-        ReadImageSequence_lasisesta(str_folder, vImages, vGTs);
+    if (inputType == LASIESTA) {
+        ReadImageSequence_lasiesta(str_folder, vImages, vGTs);
     } else if (inputType == HUAWEI) {
         ReadImageSequence_huawei(str_folder, vImages);
         // scale = 0.15;

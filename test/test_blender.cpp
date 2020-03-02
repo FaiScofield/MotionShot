@@ -20,7 +20,7 @@ using namespace std;
 using namespace cv;
 using namespace ms;
 
-enum BlenderType { NO, FEATHER, MULTI_BAND };
+enum BlenderType { NO, FEATHER, MULTI_BAND, POISSON_BAND };
 
 int main(int argc, char* argv[])
 {

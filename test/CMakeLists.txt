@@ -10,8 +10,8 @@ target_link_libraries(test_detector_denseFlow ${LIB_MotionShot})
 add_executable(test_detector_sparseFlow test_detector_sparseFlow.cpp)
 target_link_libraries(test_detector_sparseFlow ${LIB_MotionShot})
 
-add_executable(test_detector_acc_mog test_detector_acc_mog.cpp)
-target_link_libraries(test_detector_acc_mog ${LIB_MotionShot})
+add_executable(test_detector_cv test_detector_cv.cpp)
+target_link_libraries(test_detector_cv ${LIB_MotionShot})
 
 
 #add_executable(test_detector_vibe test_detector_vibe.cpp)
@@ -38,8 +38,8 @@ target_link_libraries(test_tracker ${LIB_MotionShot})
 #add_executable(test_shoter_full test_shoter_full.cpp)
 #target_link_libraries(test_shoter_full ${LIB_MotionShot})
 
-add_executable(test_shoter_lasiesta test_shoter_lasiesta.cpp)
-target_link_libraries(test_shoter_lasiesta ${LIB_MotionShot})
+add_executable(test_shoter_static_lasiesta test_shoter_static_lasiesta.cpp)
+target_link_libraries(test_shoter_static_lasiesta ${LIB_MotionShot})
 
-add_executable(test_shoter_huawei_static test_shoter_huawei_static.cpp)
-target_link_libraries(test_shoter_huawei_static ${LIB_MotionShot})
+add_executable(test_shoter_static_huawei test_shoter_static_huawei.cpp)
+target_link_libraries(test_shoter_static_huawei ${LIB_MotionShot})
