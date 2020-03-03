@@ -3,7 +3,6 @@
 
 #include <opencv2/core/core.hpp>
 #include <opencv2/features2d/features2d.hpp>
-#include <opencv2/xfeatures2d/nonfree.hpp>
 #include <vector>
 
 namespace ms
@@ -23,7 +22,7 @@ struct WarpedCorners {
 class ImageStitcher
 {
 public:
-    enum FeatureType { sift, surf, orb, akeke };
+    enum FeatureType { sift, surf, orb, akaze };
 
     enum MatchType { bf, flann };
 

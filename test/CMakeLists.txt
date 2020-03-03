@@ -27,6 +27,9 @@ target_link_libraries(test_blender ${LIB_MotionShot})
 #add_executable(test_stitcher test_stitcher.cpp)
 #target_link_libraries(test_stitcher ${LIB_MotionShot})
 
+add_executable(test_stitcher_detail test_stitcher_detail.cpp)
+target_link_libraries(test_stitcher_detail ${LIB_MotionShot})
+
 
 add_executable(test_tracker test_tracker.cpp)
 target_link_libraries(test_tracker ${LIB_MotionShot})

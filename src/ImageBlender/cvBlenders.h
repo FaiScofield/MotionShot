@@ -98,8 +98,7 @@ protected:
 class cvFeatherBlender : public cvBlender
 {
 public:
-    inline cvFeatherBlender(float sharpness = 0.02f, bool cover = false)
-        : sharpness_(sharpness), enable_cover_(cover) {}
+    inline cvFeatherBlender(float sharpness = 0.02f, bool cover = false);
 
     float sharpness() const { return sharpness_; }
     void setSharpness(float val) { sharpness_ = val; }

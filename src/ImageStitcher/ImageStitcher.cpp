@@ -5,6 +5,7 @@
 #include <opencv2/calib3d/calib3d.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/xfeatures2d/nonfree.hpp>
 //#include <opencv2/stitching.hpp>
 
 namespace ms
@@ -28,7 +29,7 @@ ImageStitcher::ImageStitcher(FeatureType ft, MatchType mt) : _featureType(ft), _
     case orb:
         _featureExtractor = cv::ORB::create();
         break;
-    case akeke:
+    case akaze:
         _featureExtractor = cv::AKAZE::create();
         break;
     case surf:

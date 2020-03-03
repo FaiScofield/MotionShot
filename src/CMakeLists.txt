@@ -22,3 +22,8 @@
 #    # ${G2O_LIBS}
 #)
 #set(LIB_MotionShot ${PROJECT_NAME})
+
+
+# Use this to get a Foreground Mask
+add_executable(grabcut grabcut.cpp)
+target_link_libraries(grabcut ${OpenCV_LIBS} )

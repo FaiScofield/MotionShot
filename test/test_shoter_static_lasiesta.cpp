@@ -32,9 +32,9 @@ int main(int argc, char* argv[])
     CommandLineParser
         parser(argc, argv,
                "{folder     f| |LASIESTA dataset folder}"
-               "{blender    b|multiband|valid blend type: \"feather\", \"multiband\", \"poission\"}"
-               "{delta      d|10|interval from frame to frame for foreground. If delta = 0, output 3~10 images}"
-               "{start      s|0|start index for image sequence}"
+               "{blender    b|feather|valid blend type: \"feather\", \"multiband\", \"poission\"}"
+               "{delta      d|0|interval from frame to frame for foreground. If delta = 0, output 3~10 images}"
+               "{begin      a|0|begin index for image sequence}"
                "{end        e|-1|end index for image sequence}"
                "{help       h|false|show help message}");
 
@@ -64,13 +64,16 @@ int main(int argc, char* argv[])
         blenderType = MULTI_BAND;
     }
 #else
+    string strMode1;
     ms::cvBlender* blender = nullptr;
     if (str_blender == "feather") {
-        blender = new ms::cvFeatherBlender(1.0, true);
+        blender = new ms::cvFeatherBlender(0.1, true);
         blenderType = FEATHER;
+        strMode1 = "羽化";
     } else if (str_blender == "multiband") {
         blender = new ms::cvMultiBandBlender(false, 5, CV_32F);
         blenderType = MULTI_BAND;
+        strMode1 = "多频带";
     } /*else if (str_blender == "poission") {
         blender = new ms::PoissionBlender(); // TODO
     }*/
@@ -80,21 +83,15 @@ int main(int argc, char* argv[])
         exit(-1);
     }
 
-    string strMode1;
-    if (blenderType == FEATHER)
-        strMode1 = "羽化";
-    else if (blenderType == MULTI_BAND)
-        strMode1 = "多频带";
-
-    int start = parser.get<int>("start");
-    int end = parser.get<int>("end");
+    int beginIdx = parser.get<int>("begin");
+    int endIdx = parser.get<int>("end");
     int delta = parser.get<int>("delta");
-    cout << " - start index = " << start << endl;
-    cout << " - end index = " << end << endl;
+    cout << " - begin index = " << beginIdx << endl;
+    cout << " - end index = " << endIdx << endl;
     cout << " - delta = " << delta << endl;
 
     vector<Mat> vImages, vGTsColor, vForegroundMasks;
-    ReadImageSequence_lasiesta(str_folder, vImages, vGTsColor, start, end - start);
+    ReadImageSequence_lasiesta(str_folder, vImages, vGTsColor, beginIdx, endIdx - beginIdx);
     if (vImages.empty() || vGTsColor.empty())
         exit(-1);
     int N = vImages.size();
@@ -102,18 +99,24 @@ int main(int argc, char* argv[])
     assert((delta == 0) || (delta > 1 && delta < N));
     assert(vImages.size() == vGTsColor.size());
 
+    // MASK边缘平滑
+    const Mat kernel1 = getStructuringElement(MORPH_ELLIPSE, Size(3, 3));
+    const Mat kernel2 = getStructuringElement(MORPH_CROSS, Size(5, 5));
     vForegroundMasks.reserve(N);
     for_each(vGTsColor.begin(), vGTsColor.end(), [&](Mat& m) {
         Mat mask, mask2, maskBin;
         cvtColor(m, mask, COLOR_BGR2GRAY);  // 有颜色, 转灰度后不一定是255
-//        erode(mask, mask2, getStructuringElement(MORPH_RECT, Size(3, 3))); // 边缘1个Pixel保持不变, 其他设为255
         compare(mask, 0, maskBin, CMP_GT);
         mask.setTo(255, maskBin);
+
+        morphologyEx(mask, mask, MORPH_OPEN, kernel1);// 平滑边界, 去噪点
+        morphologyEx(mask, mask, MORPH_CLOSE, kernel2);// 去孔洞
+
         vForegroundMasks.push_back(mask);
     });
 
     /// calc the result in different gaps
-    int maxFores = 10, minFores = 3; // 前景最多存在8个, 最少3个
+    int maxFores = 10, minFores = 3; // 前景最多存在10个, 最少3个
     if (delta != 0)
         maxFores = minFores = N / delta;
     vector<Mat> vImgsToProcess;
@@ -145,9 +148,7 @@ int main(int argc, char* argv[])
             // blender
             Mat frame_S, maskFiltered;
             frame.convertTo(frame_S, CV_16SC3);
-//            smoothMaskWeightEdge(foreMask, maskFiltered, 5); // 过渡边缘
-            dilate(foreMask, maskFiltered, kernel);   // 膨胀
-            erode(maskFiltered, maskFiltered, kernel);   // 腐蚀
+            smoothMaskWeightEdge(foreMask, maskFiltered, 0); // 过渡边缘
             blender->feed(frame_S, maskFiltered, Point(0, 0));
         }
 
@@ -172,7 +173,7 @@ int main(int argc, char* argv[])
 //        cvtColor(allForegroundMask, tmp1, COLOR_GRAY2BGR);
 //        hconcat(allForeground, tmp1, tmp2);
 //        imshow("allForeground and mask", tmp2);
-//        string txt1 = "/home/vance/output/" + to_string(k) + "个前景拼接融合结果-" + strMode1 + ".jpg";
+//        string txt1 = "/home/vance/output/ms/" + to_string(k) + "个前景拼接融合结果-" + strMode1 + ".jpg";
 //        imwrite(txt1, tmp2);
 
         // 2.前背景融合. 把pano和前景对应的mask区域的稍微缩收/扩张, 设置平滑的权重过渡, 然后再融合.
@@ -180,24 +181,25 @@ int main(int argc, char* argv[])
 #if USE_OPENCV_BLENDER
         detail::FeatherBlender* blender2 = new detail::FeatherBlender();
 #else
-//        ms::cvFeatherBlender* blender2 = new ms::cvFeatherBlender(1.0, false);
-//        const string strMode2 = "羽化";
-        ms::PoissonBlender* blender2 = new ms::PoissonBlender();
-        const string strMode2 = "泊松";
-        BlenderType blenderType2 = POISSON_BLAND;
+        ms::cvFeatherBlender* blender2 = new ms::cvFeatherBlender(0.1, false);
+        const string strMode2 = "羽化";
+        BlenderType blenderType2 = FEATHER;
+//        ms::PoissonBlender* blender2 = new ms::PoissonBlender();
+//        const string strMode2 = "泊松";
+//        BlenderType blenderType2 = POISSON_BLAND;
 #endif
         blender2->prepare(disRoi);
 
         Mat foregroundMaskFinal, backgroundMaskFinal, maskFinal;
-        smoothMaskWeightEdge(allForegroundMask, foregroundMaskFinal, 5); // 过渡边缘
+        smoothMaskWeightEdge(allForegroundMask, foregroundMaskFinal, 0); // 过渡边缘
         bitwise_not(foregroundMaskFinal, backgroundMaskFinal);
-        hconcat(foregroundMaskFinal, backgroundMaskFinal, maskFinal);
+//        hconcat(foregroundMaskFinal, backgroundMaskFinal, maskFinal);
 //        imshow("foreground & background maskFinal", maskFinal);
 
         Mat fmf, fmfOut;
         cvtColor(foregroundMaskFinal, fmf, COLOR_GRAY2BGR);
         hconcat(allForeground, fmf, fmfOut);
-//        string txt0 = "/home/vance/output/前景与掩模-" + strMode1 + "-" + to_string(k) + ".jpg";
+//        string txt0 = "/home/vance/output/ms/前景与掩模-" + strMode1 + "-" + to_string(k) + ".jpg";
 //        imwrite(txt0, fmfOut);0
 
         Mat pano_S, result, resultMask;
@@ -223,14 +225,14 @@ int main(int argc, char* argv[])
             blender2->feed(allForeground_S, foregroundMaskFinal, Point(0, 0));
         }
 
-//        blender2->blend(result, resultMask);
-//        result.convertTo(result, CV_8U);
+        blender2->blend(result, resultMask);
+        result.convertTo(result, CV_8UC3);
 
 //        hconcat(fmfOut, result, result);
-//        imshow("blend result", result);
+        imshow("blend result", result);
 
-//        string txt2 = "/home/vance/output/" + to_string(k) + "个前景最终结果-" + strMode1 + "+" + strMode2 + ".jpg";
-//        imwrite(txt2, result);
+        string txt2 = "/home/vance/output/ms/" + to_string(k) + "个前景最终结果-" + strMode1 + "+" + strMode2 + ".jpg";
+        imwrite(txt2, result);
 
         waitKey(100);
 

@@ -126,6 +126,14 @@ void cvBlender::blend(InputOutputArray dst, InputOutputArray dst_mask)
     dst_mask_.release();
 }
 
+cvFeatherBlender::cvFeatherBlender(float sharpness, bool cover): enable_cover_(cover)
+{
+    if (cover)
+        sharpness_ = 1.0;
+    else
+        sharpness_ = sharpness;
+}
+
 void cvFeatherBlender::prepare(Rect dst_roi)
 {
     cvBlender::prepare(dst_roi);
@@ -200,6 +208,64 @@ void cvFeatherBlender::feed(const std::vector<Mat> &vImgs, const std::vector<Mat
 {
     //! TODO . 开启强覆盖功能.
     //! 在重叠区域设置调整强覆盖区域的权重, 使在时序上后面的高权前景部分覆盖前面的前景.
+//    Mat img = _img.getMat();
+//    Mat dst = dst_.getMat(ACCESS_RW);
+
+//    assert(img.type() == CV_16SC3);
+//    assert(mask.type() == CV_8U);
+
+//    if (enable_cover_) {
+//        UMat weight;
+//        mask.getUMat().convertTo(weight, CV_32F, 1./255.);
+//        multiply(weight, sharpness_, weight_map_);
+//        threshold(weight_map_, weight_map_, 1.f, 1.f, THRESH_TRUNC);
+//    } else {
+//        createWeightMap(mask, sharpness_, weight_map_);
+//    }
+
+//    Mat weight_map = weight_map_.getMat(ACCESS_READ);
+//    Mat dst_weight_map = dst_weight_map_.getMat(ACCESS_RW);
+
+//    int dx = tl.x - dst_roi_.x;
+//    int dy = tl.y - dst_roi_.y;
+
+//#if ENABLE_DEBUG_RESULT
+//    Mat disU;
+//    dst.convertTo(disU, CV_8U);
+//    imshow("dst before feed", disU);
+//    imshow("dst_weight_map_ before feed", dst_weight_map_);
+//#endif
+
+//    // 当前图像的像素乘上对应权重加到输出图像上, 并记录每个pixel对应的总权重和
+//    for (int y = 0; y < img.rows; ++y) {
+//        const Point3_<short>* src_row = img.ptr<Point3_<short>>(y);
+//        Point3_<short>* dst_row = dst.ptr<Point3_<short>>(dy + y);
+//        const float* weight_row = weight_map.ptr<float>(y);
+//        float* dst_weight_row = dst_weight_map.ptr<float>(dy + y);
+//        assert(src_row != nullptr && dst_row != nullptr && weight_row != nullptr && dst_weight_row != nullptr);
+
+//        for (int x = 0; x < img.cols; ++x) {
+//            if (enable_cover_ && weight_row[x] == 1.f) {
+//                // 时序后覆盖前
+//                dst_row[dx + x].x = static_cast<short>(src_row[x].x * weight_row[x]);
+//                dst_row[dx + x].y = static_cast<short>(src_row[x].y * weight_row[x]);
+//                dst_row[dx + x].z = static_cast<short>(src_row[x].z * weight_row[x]);
+//                dst_weight_row[dx + x] = weight_row[x];
+//            } else {
+//                dst_row[dx + x].x += static_cast<short>(src_row[x].x * weight_row[x]);
+//                dst_row[dx + x].y += static_cast<short>(src_row[x].y * weight_row[x]);
+//                dst_row[dx + x].z += static_cast<short>(src_row[x].z * weight_row[x]);
+//                dst_weight_row[dx + x] += weight_row[x];
+//            }
+//        }
+//    }
+
+//#if ENABLE_DEBUG_RESULT
+//    dst.convertTo(disU, CV_8U);
+//    imshow("dst after feed", disU);
+//    imshow("dst_weight_map_ after feed", dst_weight_map_);
+//    waitKey(0);
+//#endif
 }
 
 void cvFeatherBlender::blend(InputOutputArray dst, InputOutputArray dst_mask)

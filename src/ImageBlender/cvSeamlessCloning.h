@@ -57,7 +57,7 @@ class cvSeamlessCloning
 {
 public:
     // 论文功能1-3
-    void normalClone(const cv::Mat& destination, const cv::Mat& mask, const cv::Mat& wmask,
+    void normalClone(const cv::Mat& destination, const cv::Mat& patch, const cv::Mat& binaryMask,
                      cv::Mat& cloned, int flag);
 
     // 功能5
