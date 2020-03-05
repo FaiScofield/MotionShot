@@ -6,4 +6,5 @@ build-clang/
 resource/
 _clang-format
 *.user
+Thirdparty/
 

@@ -48,7 +48,7 @@
 #include <opencv2/imgproc.hpp>
 #include <iostream>
 
-#define ENABLE_DEBUG_RESULT 0
+#define ENABLE_DEBUG_RESULT 1
 #if ENABLE_DEBUG_RESULT
 #include <opencv2/highgui.hpp>
 #endif
@@ -144,6 +144,8 @@ void cvFeatherBlender::prepare(Rect dst_roi)
 
 void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
 {
+#define ENABLE_DEBUG_RESULT_FEATHER_FEED1    0
+
     Mat img = _img.getMat();
     Mat dst = dst_.getMat(ACCESS_RW);
 
@@ -151,10 +153,10 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
     assert(mask.type() == CV_8U);
 
     if (enable_cover_) {
-        UMat weight;
-        mask.getUMat().convertTo(weight, CV_32F, 1./255.);
-        multiply(weight, sharpness_, weight_map_);
-        threshold(weight_map_, weight_map_, 1.f, 1.f, THRESH_TRUNC);
+//        UMat weight;
+        mask.getUMat().convertTo(weight_map_, CV_32F, 1./255.);
+//        multiply(weight, sharpness_, weight_map_);
+//        threshold(weight_map_, weight_map_, 1.f, 1.f, THRESH_TRUNC);
     } else {
         createWeightMap(mask, sharpness_, weight_map_);
     }
@@ -165,11 +167,12 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
     int dx = tl.x - dst_roi_.x;
     int dy = tl.y - dst_roi_.y;
 
-#if ENABLE_DEBUG_RESULT
+#if ENABLE_DEBUG_RESULT_FEATHER_FEED1 && ENABLE_DEBUG_RESULT
     Mat disU;
     dst.convertTo(disU, CV_8U);
     imshow("dst before feed", disU);
     imshow("dst_weight_map_ before feed", dst_weight_map_);
+    imshow("mask input", weight_map_);
 #endif
 
     // 当前图像的像素乘上对应权重加到输出图像上, 并记录每个pixel对应的总权重和
@@ -181,12 +184,20 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
         assert(src_row != nullptr && dst_row != nullptr && weight_row != nullptr && dst_weight_row != nullptr);
 
         for (int x = 0; x < img.cols; ++x) {
-            if (enable_cover_ && weight_row[x] == 1.f) {
-                // 时序后覆盖前
-                dst_row[dx + x].x = static_cast<short>(src_row[x].x * weight_row[x]);
-                dst_row[dx + x].y = static_cast<short>(src_row[x].y * weight_row[x]);
-                dst_row[dx + x].z = static_cast<short>(src_row[x].z * weight_row[x]);
-                dst_weight_row[dx + x] = weight_row[x];
+            if (enable_cover_) {
+                if (abs(1.f - weight_row[x]) < 1e-6f) {  // 权值为1, 直接覆盖
+                    dst_row[dx + x].x = static_cast<short>(src_row[x].x * weight_row[x]);
+                    dst_row[dx + x].y = static_cast<short>(src_row[x].y * weight_row[x]);
+                    dst_row[dx + x].z = static_cast<short>(src_row[x].z * weight_row[x]);
+                    dst_weight_row[dx + x] = weight_row[x];
+                } else if (abs(1.f - dst_weight_row[dx + x]) < 1e-6f) {
+                    // 待添加区域已经有前景则不添加
+                } else {
+                    dst_row[dx + x].x += static_cast<short>(src_row[x].x * weight_row[x]);
+                    dst_row[dx + x].y += static_cast<short>(src_row[x].y * weight_row[x]);
+                    dst_row[dx + x].z += static_cast<short>(src_row[x].z * weight_row[x]);
+                    dst_weight_row[dx + x] += weight_row[x];
+                }
             } else {
                 dst_row[dx + x].x += static_cast<short>(src_row[x].x * weight_row[x]);
                 dst_row[dx + x].y += static_cast<short>(src_row[x].y * weight_row[x]);
@@ -196,7 +207,7 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
         }
     }
 
-#if ENABLE_DEBUG_RESULT
+#if ENABLE_DEBUG_RESULT_FEATHER_FEED1 && ENABLE_DEBUG_RESULT
     dst.convertTo(disU, CV_8U);
     imshow("dst after feed", disU);
     imshow("dst_weight_map_ after feed", dst_weight_map_);
@@ -204,73 +215,86 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
 #endif
 }
 
-void cvFeatherBlender::feed(const std::vector<Mat> &vImgs, const std::vector<Mat> &vMasks, const std::vector<Point> &vTopleftCorners)
+void cvFeatherBlender::feed(const vector<Mat> &vImgs, const vector<Mat> &vMasks, const vector<Point> &vTopleftCorners)
 {
+#define ENABLE_DEBUG_RESULT_FEATHER_FEED2    0
+
     //! TODO . 开启强覆盖功能.
     //! 在重叠区域设置调整强覆盖区域的权重, 使在时序上后面的高权前景部分覆盖前面的前景.
-//    Mat img = _img.getMat();
-//    Mat dst = dst_.getMat(ACCESS_RW);
 
-//    assert(img.type() == CV_16SC3);
-//    assert(mask.type() == CV_8U);
+    assert(vImgs.size() == vMasks.size());
 
-//    if (enable_cover_) {
-//        UMat weight;
-//        mask.getUMat().convertTo(weight, CV_32F, 1./255.);
-//        multiply(weight, sharpness_, weight_map_);
-//        threshold(weight_map_, weight_map_, 1.f, 1.f, THRESH_TRUNC);
-//    } else {
-//        createWeightMap(mask, sharpness_, weight_map_);
-//    }
+    Mat dst = dst_.getMat(ACCESS_RW);
+    Mat dst_weight_map = dst_weight_map_.getMat(ACCESS_RW);
 
-//    Mat weight_map = weight_map_.getMat(ACCESS_READ);
-//    Mat dst_weight_map = dst_weight_map_.getMat(ACCESS_RW);
+    const size_t N = vImgs.size();
+    for (size_t i = 0; i < N; ++i) {
+        assert(vImgs[i].type() == CV_16SC3);
+        assert(vMasks[i].type() == CV_8U);
 
-//    int dx = tl.x - dst_roi_.x;
-//    int dy = tl.y - dst_roi_.y;
+        const Mat& image = vImgs[i];
+        const Mat& mask = vMasks[i];
+        Mat weightMap;
+        if (enable_cover_)
+            mask.convertTo(weightMap, CV_8UC1);
+        else
+            createWeightMap(mask, sharpness_, weightMap);
 
-//#if ENABLE_DEBUG_RESULT
-//    Mat disU;
-//    dst.convertTo(disU, CV_8U);
-//    imshow("dst before feed", disU);
-//    imshow("dst_weight_map_ before feed", dst_weight_map_);
-//#endif
+        const int dx = vTopleftCorners[i].x - dst_roi_.x;
+        const int dy = vTopleftCorners[i].y - dst_roi_.y;
 
-//    // 当前图像的像素乘上对应权重加到输出图像上, 并记录每个pixel对应的总权重和
-//    for (int y = 0; y < img.rows; ++y) {
-//        const Point3_<short>* src_row = img.ptr<Point3_<short>>(y);
-//        Point3_<short>* dst_row = dst.ptr<Point3_<short>>(dy + y);
-//        const float* weight_row = weight_map.ptr<float>(y);
-//        float* dst_weight_row = dst_weight_map.ptr<float>(dy + y);
-//        assert(src_row != nullptr && dst_row != nullptr && weight_row != nullptr && dst_weight_row != nullptr);
+#if ENABLE_DEBUG_RESULT_FEATHER_FEED2 && ENABLE_DEBUG_RESULT
+        Mat disU;
+        dst.convertTo(disU, CV_8U);
+        imshow("dst before feed", disU);
+        imshow("dst_weight_map_ before feed", dst_weight_map_);
+#endif
 
-//        for (int x = 0; x < img.cols; ++x) {
-//            if (enable_cover_ && weight_row[x] == 1.f) {
-//                // 时序后覆盖前
-//                dst_row[dx + x].x = static_cast<short>(src_row[x].x * weight_row[x]);
-//                dst_row[dx + x].y = static_cast<short>(src_row[x].y * weight_row[x]);
-//                dst_row[dx + x].z = static_cast<short>(src_row[x].z * weight_row[x]);
-//                dst_weight_row[dx + x] = weight_row[x];
-//            } else {
-//                dst_row[dx + x].x += static_cast<short>(src_row[x].x * weight_row[x]);
-//                dst_row[dx + x].y += static_cast<short>(src_row[x].y * weight_row[x]);
-//                dst_row[dx + x].z += static_cast<short>(src_row[x].z * weight_row[x]);
-//                dst_weight_row[dx + x] += weight_row[x];
-//            }
-//        }
-//    }
+        // 当前图像的像素乘上对应权重加到输出图像上, 并记录每个pixel对应的总权重和
+        for (int y = 0; y < image.rows; ++y) {
+            const Point3_<short>* src_row = image.ptr<Point3_<short>>(y);
+            const float* weight_row = weightMap.ptr<float>(y);
+            Point3_<short>* dst_row = dst.ptr<Point3_<short>>(dy + y);
+            float* dst_weight_row = dst_weight_map.ptr<float>(dy + y);
+            assert(src_row != nullptr && dst_row != nullptr && weight_row != nullptr && dst_weight_row != nullptr);
 
-//#if ENABLE_DEBUG_RESULT
-//    dst.convertTo(disU, CV_8U);
-//    imshow("dst after feed", disU);
-//    imshow("dst_weight_map_ after feed", dst_weight_map_);
-//    waitKey(0);
-//#endif
+            for (int x = 0; x < image.cols; ++x) {
+                if (enable_cover_) { // 时序后覆盖前
+                    if (abs(1.f - weight_row[x]) < 1e-6f) {  // 权值为1, 直接覆盖
+                        dst_row[dx + x].x = static_cast<short>(src_row[x].x * weight_row[x]);
+                        dst_row[dx + x].y = static_cast<short>(src_row[x].y * weight_row[x]);
+                        dst_row[dx + x].z = static_cast<short>(src_row[x].z * weight_row[x]);
+                        dst_weight_row[dx + x] = weight_row[x];
+                    } else if (abs(1.f - dst_weight_row[dx + x]) < 1e-6f) {  // 待添加区域已经有前景则将降低此区域权值强行设为0.1
+                        dst_row[dx + x].x += static_cast<short>(src_row[x].x * 0.01);
+                        dst_row[dx + x].y += static_cast<short>(src_row[x].y * 0.01);
+                        dst_row[dx + x].z += static_cast<short>(src_row[x].z * 0.01);
+                        dst_weight_row[dx + x] += 0.01;
+                    }
+                } else {
+                    dst_row[dx + x].x += static_cast<short>(src_row[x].x * weight_row[x]);
+                    dst_row[dx + x].y += static_cast<short>(src_row[x].y * weight_row[x]);
+                    dst_row[dx + x].z += static_cast<short>(src_row[x].z * weight_row[x]);
+                    dst_weight_row[dx + x] += weight_row[x];
+                }
+            }
+        }
+
+#if ENABLE_DEBUG_RESULT_FEATHER_FEED2 && ENABLE_DEBUG_RESULT
+    dst.convertTo(disU, CV_8U);
+    imshow("dst after feed", disU);
+    imshow("dst_weight_map_ after feed", dst_weight_map_);
+    waitKey(0);
+#endif
+
+    }
 }
 
 void cvFeatherBlender::blend(InputOutputArray dst, InputOutputArray dst_mask)
 {
-#if ENABLE_DEBUG_RESULT
+#define ENABLE_DEBUG_RESULT_FEATHER_BLEND   0
+
+#if ENABLE_DEBUG_RESULT_FEATHER_BLEND && ENABLE_DEBUG_RESULT
     Mat tmp;
     dst_.convertTo(tmp, CV_8U, 255);
     imshow("before blending dst_weight_map_", dst_weight_map_);
@@ -279,7 +303,7 @@ void cvFeatherBlender::blend(InputOutputArray dst, InputOutputArray dst_mask)
 
     normalizeUsingWeightMap(dst_weight_map_, dst_);
 
-#if ENABLE_DEBUG_RESULT
+#if ENABLE_DEBUG_RESULT_FEATHER_BLEND && ENABLE_DEBUG_RESULT
     dst_.convertTo(tmp, CV_8U, 255);
     imshow("after blending dst_weight_map_", dst_weight_map_);
     imshow("after blending dst_", tmp);

@@ -15,12 +15,20 @@ namespace ms
 #define ERROR(msg) (std::cerr << "[ERROR] " << msg << std::endl)
 
 enum InputType {
-    VIDEO,      // 视频序列
-    LASIESTA,   // LASIESTA数据集
-    HUAWEI,     // 华为P30拍摄的数据集
-    SEQUENCE,   // 图像序列(以数字序号命名)
-    TWO_IMAGES  // 两张图片
+    VIDEO       = 0,  // 视频序列
+    LASIESTA    = 1,  // LASIESTA数据集
+    HUAWEI      = 2,  // 华为P30拍摄的数据集
+    SEQUENCE    = 3,  // 图像序列(以数字序号命名)
+    TWO_IMAGES  = 4   // 两张图片
 };
+
+//enum SmoothMaskType {
+//    ERODE   = 0,    // 往里创建过渡区域
+//    DILATE  = 1,    // 往外创建过渡区域
+//    BOTH    = 2     // 往两个方向都创建过渡区域
+//};
+
+void ReadImageNamesFromFolder(const std::string& folder, std::vector<std::string>& names);
 
 void ReadImagesFromFolder_lasiesta(const std::string& folder, std::vector<cv::Mat>& imgs);
 void ReadGroundtruthFromFolder_lasiesta(const std::string& folder, std::vector<cv::Mat>& imgs);
@@ -63,10 +71,13 @@ cv::Rect resultRoi(const std::vector<cv::Point>& corners, const std::vector<cv::
 
 void shrinkRoi(const cv::Mat& src, cv::Mat& dst, int size);
 
-void smoothMaskWeightEdge(const cv::Mat& src, cv::Mat& dst, int size);
+void smoothMaskWeightEdge(const cv::Mat& src, cv::Mat& dst, int b1, int b2 = 0);
 
 // 双线性插值
 float getPixelValue(const cv::Mat& img, float x, float y);
+
+//导向滤波器
+cv::Mat guidedFilter(const cv::Mat& src, int radius, double eps);
 
 }  // namespace ms
 

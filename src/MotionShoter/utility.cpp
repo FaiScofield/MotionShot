@@ -4,12 +4,14 @@
 #include <boost/filesystem.hpp>
 #include <iostream>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
-#include <set>
 
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/video/video.hpp>
+
+#define ENABLE_DEBUG 1
 
 namespace ms
 {
@@ -17,6 +19,36 @@ namespace ms
 using namespace cv;
 using namespace std;
 namespace bf = boost::filesystem;
+
+
+void ReadImageNamesFromFolder(const string& folder, vector<string>& names)
+{
+    bf::path path(folder);
+    if (!bf::exists(path)) {
+        cerr << "[Error] Data folder doesn't exist! " << path << endl;
+        return;
+    }
+
+    vector<string> vImageNames;
+    vImageNames.reserve(100);
+    bf::directory_iterator end_iter;
+    for (bf::directory_iterator iter(path); iter != end_iter; ++iter) {
+        if (bf::is_directory(iter->status()))
+            continue;
+        if (bf::is_regular_file(iter->status()))
+            vImageNames.push_back(iter->path().string());
+    }
+
+    if (vImageNames.empty()) {
+        cerr << "[Error] No image data in the folder!" << endl;
+        return;
+    } else {
+        cout << "[Info ] Read " << vImageNames.size() << " images in the folder." << endl;
+    }
+
+    vImageNames.shrink_to_fit();
+    names.swap(vImageNames);
+}
 
 void ReadImagesFromFolder_lasiesta(const string& folder, vector<Mat>& imgs)
 {
@@ -275,9 +307,8 @@ void resizeFlipRotateImages(vector<Mat>& imgs, double scale, int flip, int rotat
     }
 }
 
-void extractImagesToStitch(const vector<Mat>& vImages, vector<Mat>& vImagesToProcess,
-                           vector<int>& vIdxToProcess, vector<vector<int>>& vvIdxPerIter,
-                           int minFores = 3, int maxFores = 8)
+void extractImagesToStitch(const vector<Mat>& vImages, vector<Mat>& vImagesToProcess, vector<int>& vIdxToProcess,
+                           vector<vector<int>>& vvIdxPerIter, int minFores = 3, int maxFores = 8)
 {
     assert(minFores > 2 && minFores <= maxFores);
 
@@ -415,13 +446,13 @@ void showFlow(const Mat& flow, Mat& color)
     Mat flow_uv[2], mag, ang, hsv, hsv_split[3], bgr;
     split(flow, flow_uv);
     multiply(flow_uv[1], -1, flow_uv[1]);
-    cartToPolar(flow_uv[0], flow_uv[1], mag, ang, true); // 笛卡尔转极坐标系
+    cartToPolar(flow_uv[0], flow_uv[1], mag, ang, true);  // 笛卡尔转极坐标系
     normalize(mag, mag, 0, 1, NORM_MINMAX);
     hsv_split[0] = ang;
     hsv_split[1] = mag;
     hsv_split[2] = Mat::ones(ang.size(), ang.type());
     merge(hsv_split, 3, hsv);
-    cvtColor(hsv, bgr, COLOR_HSV2BGR);    // bgr1 type = CV_32FC3
+    cvtColor(hsv, bgr, COLOR_HSV2BGR);  // bgr1 type = CV_32FC3
     bgr.convertTo(color, CV_8UC3, 255, 0);
 }
 
@@ -432,17 +463,17 @@ void drawhistogram(const Mat& src, Mat& histGray, const Mat& mask, int binSize)
     assert(binSize < 128 && binSize >= 1);
 
     int channels = 0;
-    int histSize = 256 / binSize; // 51 / 256
+    int histSize = 256 / binSize;  // 51 / 256
     float range_[] = {0, 256};
     const float* ranges = {range_};
     Mat hist;
     calcHist(&src, 1, &channels, mask, hist, 1, &histSize, &ranges);
-//    cout << "hist.type = " << hist.type() << endl;
-//    cout << "hist = " << hist.t() << endl;
+    //    cout << "hist.type = " << hist.type() << endl;
+    //    cout << "hist = " << hist.t() << endl;
 
     // 直方图归一化
-    normalize(hist, hist, 1.0, 0.0, NORM_MINMAX); // 32FC1
-//    cout << "hist norm = " << hist.t() << endl;
+    normalize(hist, hist, 1.0, 0.0, NORM_MINMAX);  // 32FC1
+                                                   //    cout << "hist norm = " << hist.t() << endl;
 
     // 在直方图中画出直方图
     const int boardSize = 5;
@@ -478,7 +509,7 @@ void drawhistogram(const Mat& src, Mat& histGray, const Mat& mask, int binSize)
     waitKey(0);
 }
 
-void drawFlowAndHist(const Mat& flow, Mat& flowGray, Mat& hist, Mat& histGraph, int chanel,int binSize)
+void drawFlowAndHist(const Mat& flow, Mat& flowGray, Mat& hist, Mat& histGraph, int chanel, int binSize)
 {
     assert(flow.type() == CV_32FC2);  // CV_32FC2
     assert(binSize < 128 && binSize >= 1);
@@ -499,7 +530,7 @@ void drawFlowAndHist(const Mat& flow, Mat& flowGray, Mat& hist, Mat& histGraph, 
 
 
     // hist (32FC1)
-    int histSize = 256 / binSize; // 51 / 256
+    int histSize = 256 / binSize;  // 51 / 256
     float range_[] = {0, 256};
     const float* ranges = {range_};
     if (chanel == 1) {
@@ -509,7 +540,7 @@ void drawFlowAndHist(const Mat& flow, Mat& flowGray, Mat& hist, Mat& histGraph, 
         int channels[2] = {0, 1};
         calcHist(&flowGray, 1, channels, Mat(), hist, 1, &histSize, &ranges);
     }
-    normalize(hist, hist, 1.0, 0.0, NORM_MINMAX); // 直方图归一化. 32FC1
+    normalize(hist, hist, 1.0, 0.0, NORM_MINMAX);  // 直方图归一化. 32FC1
 
     // 画出直方图
     const int boardSize = 5;
@@ -562,45 +593,80 @@ void shrinkRoi(const Mat& src, Mat& dst, int size)
 {
     assert(src.type() == CV_8UC1);
 
-//    imshow("origin mask", src);
+    //    imshow("origin mask", src);
 
-//    Mat tmp1, tmp2;
-//    cvtColor(src, tmp1, COLOR_GRAY2BGR);
+    //    Mat tmp1, tmp2;
+    //    cvtColor(src, tmp1, COLOR_GRAY2BGR);
 
     Mat kernel = getStructuringElement(MORPH_RECT, Size(size, size));
-    erode(src, dst, kernel, Point(-1,-1), 1, BORDER_CONSTANT);
-//    imshow("mask shrink", dst);
+    erode(src, dst, kernel, Point(-1, -1), 1, BORDER_CONSTANT);
+    //    imshow("mask shrink", dst);
 
-//    waitKey(0);
+    //    waitKey(0);
 }
 
-void smoothMaskWeightEdge(const cv::Mat& src, cv::Mat& dst, int size)
+/**
+ * @brief 为输入的二值掩模创建一个过渡区域
+ * @param src   输入二值化掩模, 要么0, 要么255
+ * @param dst   输出掩模, 边缘区域从0到255过渡
+ * @param b1    缩小方向的过渡区域像素大小
+ * @param b2    扩大方向的过渡区域像素大小
+ */
+void smoothMaskWeightEdge(const cv::Mat& src, cv::Mat& dst, int b1, int b2)
 {
+#define ENABLE_DEBUG_SMOOTH_MASK 0
+
     assert(src.type() == CV_8UC1);
 
-    if (size < 1) {
+    if (b1 < 2 && b2 < 2) {
         dst = src.clone();
         return;
     }
 
-    Mat noWeightMask;
-    const Mat kernel = getStructuringElement(MORPH_RECT, Size(size, size));
-    erode(src, noWeightMask, kernel, Point(-1, -1), 1, BORDER_CONSTANT); // 先腐蚀得到不要过渡的区域
+    Mat noWeightMask, weightArea, weightAreaValue, weightDistance;
+    if (b1 >= 2 && b2 < 2) {  // 缩小
+        const Mat kernel1 = getStructuringElement(MORPH_ELLIPSE, Size(2 * b1, 2 * b1));
+        erode(src, noWeightMask, kernel1);  // 先腐蚀得到不要过渡的区域
+        weightArea = src - noWeightMask;    // 得到需要过渡的区域
+        distanceTransform(src, weightDistance, DIST_C, 3);
+        weightDistance.convertTo(weightDistance, CV_8UC1);  //! NOTE 32FC1 to 8UC1, 注意不能乘255
+        bitwise_and(weightDistance, weightArea, weightAreaValue);  // 得到过渡区域的权重
+        normalize(weightAreaValue, weightAreaValue, 0, 255, NORM_MINMAX);  // 归一化
+        add(noWeightMask, weightAreaValue, dst);  // 不过渡区域(保留权值为1) + 过渡权区域 = 目标掩模
+    } else if (b1 < 2 && b2 >= 2) {  // 扩大
+        const Mat kernel2 = getStructuringElement(MORPH_CROSS, Size(2 * b2, 2 * b2));
+        dilate(src, noWeightMask, kernel2);
+        weightArea = noWeightMask - src;
+        distanceTransform(noWeightMask, weightDistance, DIST_C, 3);
+        weightDistance.convertTo(weightDistance, CV_8UC1);
+        bitwise_and(weightDistance, weightArea, weightAreaValue);
+        normalize(weightAreaValue, weightAreaValue, 0, 255, NORM_MINMAX);
+        add(src, weightAreaValue, dst);
+    } else {
+        assert(b1 >= 2 && b2 >= 2);
 
-    Mat distance, weightArea, weightAreaValue;
-    bitwise_xor(src, noWeightMask, weightArea); // 得到需要过渡的区域
-    distanceTransform(src, distance, DIST_C, 3);
-//    imshow("distance 32F", distance);
-    distance.convertTo(distance, CV_8UC1);  //! NOTE 32FC1 to 8UC1, 注意不能乘255
-//    imshow("distance 8U", distance);
+        const Mat kernel1 = getStructuringElement(MORPH_ELLIPSE, Size(2 * b1, 2 * b1));
+        const Mat kernel2 = getStructuringElement(MORPH_CROSS, Size(2 * b2, 2 * b2));
 
-    bitwise_and(distance, weightArea, weightAreaValue); // 得到过渡区域的权重
-    normalize(weightAreaValue, weightAreaValue, 0, 255, NORM_MINMAX);   // 归一化
-//    imshow("weightAreaValue", weightAreaValue);
+        Mat tmp1, tmp2;
+        erode(src, tmp1, kernel1);
+        dilate(src, tmp2, kernel2);
+        weightArea = tmp2 - tmp1;
 
-    add(noWeightMask, weightAreaValue, dst); // 不过渡区域(保留权值为1) + 过渡权区域 = 目标掩模
-//    imshow("norm distance 8U", dst);
-//    waitKey(0);
+#if ENABLE_DEBUG && ENABLE_DEBUG_SMOOTH_MASK
+        imshow("weightArea", weightArea);
+#endif
+        distanceTransform(tmp2, weightDistance, DIST_C, 3);
+        weightDistance.convertTo(weightDistance, CV_8UC1);
+        bitwise_and(weightDistance, weightArea, weightAreaValue);
+        normalize(weightAreaValue, weightAreaValue, 0, 255, NORM_MINMAX);
+
+#if ENABLE_DEBUG && ENABLE_DEBUG_SMOOTH_MASK
+        imshow("weightAreaValue", weightAreaValue);
+        waitKey(0);
+#endif
+        add(tmp1, weightAreaValue, dst);
+    }
 }
 
 
@@ -618,6 +684,48 @@ float getPixelValue(const cv::Mat& img, float x, float y)
     float yy = y - floor(y);
     return float((1 - xx) * (1 - yy) * data[0] + xx * (1 - yy) * data[1] +
                  (1 - xx) * yy * data[img.step] + xx * yy * data[img.step + 1]);
+}
+
+
+//导向滤波器
+Mat guidedFilter(const Mat& src, int radius, double eps)
+{
+    Mat srcMat, guidedMat, dstImage;
+    vector<Mat> vInputs, vResults;
+
+    if (src.channels() == 3) {
+        split(src, vInputs);
+        vResults.resize(3);
+        for (int i = 0; i < 3; ++i)
+            vResults[i] = guidedFilter(vInputs[i], radius, eps);
+        merge(vResults, dstImage);
+        return dstImage;
+    }
+
+    //------------【0】转换源图像信息，将输入扩展为64位浮点型，以便以后做乘法------------
+    src.convertTo(srcMat, CV_64FC1);
+    src.convertTo(guidedMat, CV_64FC1, 1./255.);
+    //--------------【1】各种均值计算----------------------------------
+    Mat mean_p, mean_I, mean_Ip, mean_II;
+    boxFilter(srcMat, mean_p, CV_64FC1, Size(radius, radius));  //生成待滤波图像均值mean_p
+    boxFilter(guidedMat, mean_I, CV_64FC1, Size(radius, radius));  //生成引导图像均值mean_I
+    boxFilter(srcMat.mul(guidedMat), mean_Ip, CV_64FC1, Size(radius, radius));  //生成互相关均值mean_Ip
+    boxFilter(guidedMat.mul(guidedMat), mean_II, CV_64FC1, Size(radius, radius));  //生成引导图像自相关均值mean_II
+    //--------------【2】计算相关系数，计算Ip的协方差cov和I的方差var------------------
+    Mat cov_Ip = mean_Ip - mean_I.mul(mean_p);
+    Mat var_I = mean_II - mean_I.mul(mean_I);
+    //---------------【3】计算参数系数a、b-------------------
+    Mat a = cov_Ip / (var_I + eps);
+    Mat b = mean_p - a.mul(mean_I);
+    //--------------【4】计算系数a、b的均值-----------------
+    Mat mean_a, mean_b;
+    boxFilter(a, mean_a, CV_64FC1, Size(radius, radius));
+    boxFilter(b, mean_b, CV_64FC1, Size(radius, radius));
+    //---------------【5】生成输出矩阵------------------
+    dstImage = mean_a.mul(srcMat) + mean_b;
+    dstImage.convertTo(dstImage, CV_8UC1);
+
+    return dstImage;
 }
 
 
