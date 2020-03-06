@@ -10,9 +10,9 @@ namespace ms
 {
 
 #define INFO(msg) (std::cout << "[INFO ] " << msg << std::endl)
-#define TIMER(msg) (std::cout << "[TIMER] " << msg << std::endl)
-#define WARNING(msg) (std::cerr << "[WARNI] " << msg << std::endl)
-#define ERROR(msg) (std::cerr << "[ERROR] " << msg << std::endl)
+#define TIMER(msg) (std::cout << "\033[32m[TIMER] " << msg << "\033[0m" << std::endl)
+#define WARNING(msg) (std::cerr << "\033[33m[WARNI] " << msg << "\033[0m" << std::endl)
+#define ERROR(msg) (std::cerr << "\033[31m[ERROR] " << msg << "\033[0m" << std::endl)
 
 enum InputType {
     VIDEO       = 0,  // 视频序列
@@ -46,6 +46,12 @@ void ReadImageSequence_huawei(const std::string& folder, std::vector<cv::Mat>& i
 
 void ReadImageSequence_video(const std::string& video, std::vector<cv::Mat>& imgs,
                              int startIndex = 0, int num = -1);
+
+void ReadGroundtruthRectFromFolder(const std::string& folder, const std::string& suffix,
+                                   std::vector<cv::Mat>& masks, std::vector<cv::Rect>& rects,
+                                   int startIndex, int num);
+
+void colorMask2Gray(const std::vector<cv::Mat>& colors, std::vector<cv::Mat>& grays);
 
 // 输入图像的缩放,翻转和旋转. 主要是输入视频可能不正.
 void resizeFlipRotateImages(std::vector<cv::Mat>& imgs, double scale, int flip = 0, int rotate = -1);

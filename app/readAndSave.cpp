@@ -81,8 +81,8 @@ void GCAPP::mouseClick(int event, int x, int y, int flags, void *param)
         ofs_.open((*outConfigName_), ios_base::app);
         if (!ofs_.is_open())
             ERROR("Failed to open file " << *outConfigName_);
-        ofs_ << outImageName_ << "\tRect: " << rect_.x << ", " << rect_.y << ", "
-             << rect_.br().x << ", " << rect_.br().y << endl;
+        ofs_ << outImageName_ << "\t" << rect_.x << "  " << rect_.y << "  "
+             << rect_.br().x << "  " << rect_.br().y << endl;
         ofs_.close();
         reset();
 
@@ -166,12 +166,12 @@ int main(int argc, char* argv[])
 
     const size_t N = vImages.size();
 
-    vector<int> params{IMWRITE_JPEG_QUALITY};
+    vector<int> params{/*IMWRITE_JPEG_QUALITY*/IMWRITE_PNG_COMPRESSION};
     if (mark) {
         const string winName = "image show";
         namedWindow(winName, WINDOW_AUTOSIZE);
 
-        string outConfigFile = str_output + "/" + "config.txt";
+        string outConfigFile = str_output + "/" + "rect_param.txt";
         gcapp.setOutConfigName(outConfigFile);
         gcapp.setWindowName(winName);
 

@@ -1,8 +1,7 @@
-#ifndef UTILITY_HPP
-#define UTILITY_HPP
-
+#include <boost/algorithm/string_regex.hpp>
 #include <boost/filesystem.hpp>
 #include <iostream>
+#include <fstream>
 #include <map>
 #include <set>
 #include <string>
@@ -261,6 +260,73 @@ void ReadImageSequence_video(const string& video, vector<Mat>& imgs, int startIn
     imgs = vector<Mat>(allImages.begin() + S, allImages.begin() + S + N);
 
     cout << "[Info ] Get " << imgs.size() << " images from tatal (from video)." << endl;
+}
+
+void ReadGroundtruthRectFromFolder(const string& folder, const string& suffix, vector<Mat>& masks,
+                                   vector<Rect>& rects, int startIndex, int num)
+{
+    const int endIdx = startIndex + num - 1;
+
+    string pre, suf;
+    if (folder.back() != '/')
+        pre = folder + "/";
+    else
+        pre = folder;
+
+    if (suffix.front() != '.')
+        suf = "." + suffix;
+    else
+        suf = suffix;
+
+    ifstream ifs;
+    string rect_param_file = pre + "rect_param.txt";
+    ifs.open(rect_param_file);
+    if (!ifs.is_open()) {
+        rect_param_file = pre + "../image_rect/rect_param.txt";
+        ifs.open(rect_param_file);
+        if (!ifs.is_open()) {
+            cerr << "Cannot open the 'rect_param.txt' file!" << endl;
+            return;
+        }
+    }
+
+    vector<Rect> vRects;
+    vRects.reserve(num);
+    string lineData;
+    while (getline(ifs, lineData) && !lineData.empty()) {
+        istringstream line(lineData);
+        string oriImgLoc;
+        int x1, y1, x2, y2;
+        line >> oriImgLoc >> x1 >> y1 >> x2 >> y2;
+        vRects.push_back(Rect(x1, y1, x2 - x1, y2 - y1));
+    }
+    rects.swap(vRects);
+
+    vector<Mat> vMasks;
+    vMasks.reserve(num);
+    for (int i = startIndex; i <= endIdx; ++i) {
+        const string gtFile = pre + to_string(i) + suf;
+        vMasks.push_back(imread(gtFile, IMREAD_GRAYSCALE));
+    }
+
+    cout << "[Info ] Read " << vMasks.size() << " gt files in the folder." << endl;
+
+    masks.swap(vMasks);
+}
+
+void colorMask2Gray(const vector<Mat>& colors, vector<Mat>& grays)
+{
+    assert(!colors.empty());
+
+    vector<Mat> vGrays;
+    vGrays.reserve(colors.size());
+    for (size_t i = 0, iend = colors.size(); i < iend; ++i) {
+        Mat gray;
+        cvtColor(colors[i], gray, COLOR_BGR2GRAY);  // 有颜色, 转灰度后不一定是255
+        normalize(gray, gray, 0, 255, NORM_MINMAX);
+        vGrays.push_back(gray);
+    }
+    grays.swap(vGrays);
 }
 
 void resizeFlipRotateImages(vector<Mat>& imgs, double scale, int flip, int rotate)
@@ -730,5 +796,3 @@ Mat guidedFilter(const Mat& src, int radius, double eps)
 
 
 }  // namespace ms
-
-#endif  // UTILITY_HPP

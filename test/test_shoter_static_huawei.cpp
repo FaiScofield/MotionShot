@@ -1,4 +1,4 @@
-#include "utility.h"
+#include "MotionShoter/utility.h"
 #include <iostream>
 #include <map>
 #include <opencv2/core/core.hpp>
@@ -6,18 +6,12 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/photo.hpp>
 #include <set>
-
-
-#define USE_OPENCV_BLENDER 0  //! NOTE OpenCV融合没有考虑时序
-#define DEBUG_BLEND_SINGLE_FOREGROUND   0
-
-
-#if USE_OPENCV_BLENDER
-#include <opencv2/stitching.hpp>
-#else
 #include "ImageBlender/cvBlenders.h"
 #include "ImageBlender/cvSeamlessCloning_func.hpp"
-#endif
+
+#define DEBUG_BLEND_SINGLE_FOREGROUND   0
+#define GET_GROUNDTRUTH_FROM_BAIDU      0
+#define GET_GROUNDTRUTH_FROM_FACEPP     1
 
 using namespace std;
 using namespace cv;
@@ -33,8 +27,8 @@ int main(int argc, char* argv[])
                "{folder     f| |huawei SEQUENCE dataset folder}"
                "{blender    b|feather|valid blend type: \"feather\", \"multiband\", \"poission\"}"
                "{scale      c|0.5|scale of inpute image}"
-               "{begin      b|1|start index for image sequence}"
-               "{end        e|9|end index for image sequence}"
+               "{begin      a|1|start index for image sequence}"
+               "{end        e|8|end index for image sequence}"
                "{help       h|false|show help message}");
 
     if (parser.get<bool>("help")) {
@@ -52,38 +46,23 @@ int main(int argc, char* argv[])
     cout << " - folder = " << str_folder << endl;
     cout << " - blender = " << str_blender << endl;
 
+    string strMode1;
     BlenderType blenderType = NO;
-#if USE_OPENCV_BLENDER
-    detail::Blender* blender = nullptr;
-    if (str_blender == "feather") {
-        blender = dynamic_cast<detail::Blender*>(new detail::FeatherBlender());
-        blenderType = FEATHER;
-    } else if (str_blender == "multiband") {
-        blender = dynamic_cast<detail::Blender*>(new detail::MultiBandBlender(false, 5, CV_32F));
-        blenderType = MULTI_BAND;
-    }
-#else
     ms::cvBlender* blender = nullptr;
     if (str_blender == "feather") {
         blender = new ms::cvFeatherBlender(0.1, true);
         blenderType = FEATHER;
+        strMode1 = "羽化";
     } else if (str_blender == "multiband") {
         blender = new ms::cvMultiBandBlender(false, 5, CV_32F);
         blenderType = MULTI_BAND;
+        strMode1 = "多频带";
     } /*else if (str_blender == "poission") {
         blender = new ms::PoissionBlender(); // TODO
-    }*/
-#endif
-    else {
+    }*/ else {
         cerr << "[Error] Unknown blender type for " << str_blender << endl;
         exit(-1);
     }
-
-    string strMode1;
-    if (blenderType == FEATHER)
-        strMode1 = "羽化";
-    else if (blenderType == MULTI_BAND)
-        strMode1 = "多频带";
 
     double scale = parser.get<double>("scale");
     int beginIdx = parser.get<int>("begin");
@@ -92,19 +71,105 @@ int main(int argc, char* argv[])
     cout << " - end index = " << endIdx << endl;
     cout << " - scale = " << scale << endl;
 
-    vector<Mat> vImages, vGTsColor, vForegroundMasks;
-    ReadImageSequence(str_folder, "jpg", vImages, beginIdx, endIdx - beginIdx);  // 1 ~ 12
-    resizeFlipRotateImages(vImages, 0.5);
-    resizeFlipRotateImages(vImages, scale);
+    // 读取原图
+    vector<Mat> vImages, vGTsColor, vGTsGray, vForegroundMasks;
+    ReadImageSequence(str_folder, "jpg", vImages, beginIdx, endIdx - beginIdx + 1);  // 1 ~ 12
+    resizeFlipRotateImages(vImages, 0.5);  //! 注意rect掩模是在原图缩小0.5倍后获得的
 
+    // 读取前景掩模
+#if GET_GROUNDTRUTH_FROM_BAIDU
+    //! 注意通过NN得到的掩模可能非唯一/边界不完整/存在小孔洞, 需要过滤/膨胀处理
+    vector<Mat> vGTsMaskRect;
+    vector<Rect> vGTsRect;
+    const string gtFolder = str_folder + "/../gt_rect_small_baidu/";
+    ReadGroundtruthRectFromFolder(gtFolder, "png", vGTsMaskRect, vGTsRect, beginIdx, endIdx - beginIdx + 1);
+    assert(vGTsMaskRect.size() == vGTsRect.size());
+
+    vGTsGray.reserve(vGTsMaskRect.size());
+    for (size_t i = 0, iend = vGTsMaskRect.size(); i < iend; ++i) {
+        Mat gtGray = Mat::zeros(vImages[0].size(), CV_8UC1);
+        vGTsMaskRect[i].copyTo(gtGray(vGTsRect[i]));
+
+        vector<vector<Point>> contours;
+        findContours(gtGray, contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+
+        Mat toShow;
+        cvtColor(gtGray, toShow, COLOR_GRAY2BGR);
+        drawContours(toShow, contours, -1, Scalar(0,255,0));
+        imshow("mask input & contours", toShow);
+        waitKey(0);
+
+        if (contours.size() > 1) {
+            int maxIdx = 0, maxArea = 0;
+            for (int j = 0, jend = contours.size(); j < jend; ++j) {
+                Rect r = boundingRect(contours[j]);
+                if (r.area() > maxArea) {
+                    maxIdx = j;
+                    maxArea = r.area();
+                }
+            }
+            gtGray = Mat::zeros(gtGray.size(), CV_8UC1);
+            drawContours(gtGray, contours, maxIdx, Scalar(255), -1);
+
+            rectangle(toShow, boundingRect(contours[maxIdx]), Scalar(0,0,255), 2);
+            imshow("mask & max rect", toShow);
+            imshow("final input mask", gtGray);
+            waitKey(0);
+        }
+        vGTsGray.push_back(gtGray);
+    }
+#elif GET_GROUNDTRUTH_FROM_FACEPP
+    vector<Mat> vGTsMaskRect;
+    vector<Rect> vGTsRect;
+    const string gtFolder = str_folder + "/../gt_rect_small_facepp/";
+    ReadGroundtruthRectFromFolder(gtFolder, "jpg", vGTsMaskRect, vGTsRect, beginIdx, endIdx - beginIdx + 1);
+
+    vGTsGray.reserve(vGTsMaskRect.size());
+    for (size_t i = 0, iend = vGTsMaskRect.size(); i < iend; ++i) {
+        Mat gtGray = Mat::zeros(vImages[0].size(), CV_8UC1);
+        vGTsMaskRect[i].copyTo(gtGray(vGTsRect[i]));
+
+        Mat toShow;
+        cvtColor(gtGray, toShow, COLOR_GRAY2BGR);
+
+        threshold(gtGray, gtGray, 50, 0, THRESH_TOZERO);
+        normalize(gtGray, gtGray, 0, 255, NORM_MINMAX);
+
+        vector<vector<Point>> contours;
+        findContours(gtGray, contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+
+        drawContours(toShow, contours, -1, Scalar(0,255,0), 2);
+        imshow("mask input & contous", toShow);
+        if (contours.size() > 1) {
+            int maxIdx = 0, maxArea = 0;
+            for (int j = 0, jend = contours.size(); j < jend; ++j) {
+                Rect r = boundingRect(contours[j]);
+                if (r.area() > maxArea) {
+                    maxIdx = j;
+                    maxArea = r.area();
+                }
+            }
+            gtGray = Mat::zeros(gtGray.size(), CV_8UC1);
+            drawContours(gtGray, contours, maxIdx, Scalar(255), -1);
+
+            imshow("mask input final", gtGray);
+            waitKey(0);
+        }
+        vGTsGray.push_back(gtGray);
+
+    }
+#else
     ReadImageSequence(str_folder + "-gt", "jpg", vGTsColor, beginIdx, endIdx - beginIdx);
-    resizeFlipRotateImages(vGTsColor, scale);
+    colorMask2Gray(vGTsColor, vGTsGray);
+#endif
+    resizeFlipRotateImages(vImages, scale);
+    resizeFlipRotateImages(vGTsGray, scale);
 
-    if (vImages.empty() || vGTsColor.empty())
+    if (vImages.empty() || vGTsGray.empty())
         exit(-1);
     const int N = vImages.size();
     assert(N > 3);
-    assert(vImages.size() == vGTsColor.size());
+    assert(vImages.size() == vGTsGray.size());
 
     // 掩膜边缘平滑
     const Mat kernel1 = getStructuringElement(MORPH_RECT, Size(5, 5));
@@ -113,38 +178,44 @@ int main(int argc, char* argv[])
     vForegroundMasks.reserve(N);
     for (int i = 0; i < N; ++i) {
         Mat mask, maskBin, tmpMask1, tmpMask2, tmpMask3;
-        cvtColor(vGTsColor[i], mask, COLOR_BGR2GRAY);  // 有颜色, 转灰度后不一定是255
-        compare(mask, 0, maskBin, CMP_GT);
-        mask.setTo(255, maskBin);
+        mask = vGTsGray[i].clone();
 
         Mat show1, show2, show3;
         tmpMask1 = mask.clone();   // 形态学操作前
         bitwise_and(vImages[i], 255, show1, tmpMask1);
 
+#if GET_GROUNDTRUTH_FROM_BAIDU
+        morphologyEx(mask, mask, MORPH_DILATE, kernel2, Point(-1,-1), 1);
+        smoothMaskWeightEdge(mask, mask, 3, 15);
+#elif GET_GROUNDTRUTH_FROM_FACEPP
+//        morphologyEx(mask, mask, MORPH_DILATE, kernel1, Point(-1,-1), 1);
+        mask.setTo(255, mask);
+        smoothMaskWeightEdge(mask, mask, 3, 5);
+#else
         morphologyEx(mask, mask, MORPH_OPEN, kernel1, Point(-1,-1), 1);  // 开操作(先腐蚀再膨胀),平滑边界, 去噪点
         morphologyEx(mask, mask, MORPH_CLOSE, kernel2, Point(-1,-1), 1); // 去孔洞
         morphologyEx(mask, mask, MORPH_OPEN, kernel3, Point(-1,-1), 1);  // 平滑边界
-
+#endif
         vForegroundMasks.push_back(mask);
 
-//        Mat foregroundFiltered;
-////        boxFilter(mask, foregroundFiltered, -1, Size(3,3), Point(-1,-1), true, BORDER_CONSTANT);
+        Mat foregroundFiltered;
+        boxFilter(mask, foregroundFiltered, -1, Size(3,3), Point(-1,-1), true, BORDER_CONSTANT);
 //        GaussianBlur(mask, foregroundFiltered, Size(5,5), 3, 3, BORDER_CONSTANT);
 
-//        bitwise_and(vImages[i], 255, show2, mask);
-//        bitwise_and(vImages[i], 255, show3, foregroundFiltered);
-//        imshow("平滑前", show1);
-//        imshow("平滑后", show2);
-//        imshow("滤波后", show3);
-//        string txt1 = "/home/vance/output/ms/" + to_string(i+1) + "前景掩模edge滤波前.jpg";
-//        string txt2 = "/home/vance/output/ms/" + to_string(i+1) + "前景掩模edge滤波后.jpg";
-//        imwrite(txt1, show2);
-//        imwrite(txt2, show3);
+        bitwise_and(vImages[i], 255, show2, mask);
+        bitwise_and(vImages[i], 255, show3, foregroundFiltered);
+        imshow("平滑前", show1);
+        imshow("平滑后", show2);
+        imshow("滤波后", show3);
+        string txt1 = "/home/vance/output/ms/" + to_string(i+1) + "前景掩模原始.jpg";
+        string txt2 = "/home/vance/output/ms/" + to_string(i+1) + "前景掩模膨胀后.jpg";
+        imwrite(txt1, show1);
+        imwrite(txt2, show2);
 
-//        waitKey(0);
+        waitKey(0);
     }
     destroyAllWindows();
-//    exit(0);
+    exit(0);
 
 #if DEBUG_BLEND_SINGLE_FOREGROUND
     ms::cvMultiBandBlender* blender1 = new ms::cvMultiBandBlender();
@@ -296,14 +367,10 @@ int main(int argc, char* argv[])
         imwrite(txt5, foregroundFiltered);
 
         // 2.前背景融合. 把pano和前景对应的mask区域的稍微缩收/扩张, 设置平滑的权重过渡, 然后再融合.
-        //! 不能用多频段融合.
-#if USE_OPENCV_BLENDER
-        detail::FeatherBlender* blender2 = new detail::FeatherBlender();
-#else
+        //! 暂时不能用多频段融合.
 //        ms::cvSeamlessCloning* blender2 = new ms::cvSeamlessCloning();
         ms::cvFeatherBlender* blender2 = new ms::cvFeatherBlender(0.1, false);
         const string strMode2 = "羽化";
-#endif
 
         blender2->prepare(disRoi);
 
