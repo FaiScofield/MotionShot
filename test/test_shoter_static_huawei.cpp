@@ -4,14 +4,15 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/ximgproc/edge_filter.hpp>
 #include <opencv2/photo.hpp>
 #include <set>
 #include "ImageBlender/cvBlenders.h"
 #include "ImageBlender/cvSeamlessCloning_func.hpp"
 
-#define DEBUG_BLEND_SINGLE_FOREGROUND   0
+
 #define GET_GROUNDTRUTH_FROM_BAIDU      0
-#define GET_GROUNDTRUTH_FROM_FACEPP     1
+#define GET_GROUNDTRUTH_FROM_FACEPP     0
 
 using namespace std;
 using namespace cv;
@@ -71,107 +72,115 @@ int main(int argc, char* argv[])
     cout << " - end index = " << endIdx << endl;
     cout << " - scale = " << scale << endl;
 
-    // 读取原图
+    // 1.1读取原图
     vector<Mat> vImages, vGTsColor, vGTsGray, vForegroundMasks;
     ReadImageSequence(str_folder, "jpg", vImages, beginIdx, endIdx - beginIdx + 1);  // 1 ~ 12
     resizeFlipRotateImages(vImages, 0.5);  //! 注意rect掩模是在原图缩小0.5倍后获得的
-
-    // 读取前景掩模
-#if GET_GROUNDTRUTH_FROM_BAIDU
-    //! 注意通过NN得到的掩模可能非唯一/边界不完整/存在小孔洞, 需要过滤/膨胀处理
-    vector<Mat> vGTsMaskRect;
-    vector<Rect> vGTsRect;
-    const string gtFolder = str_folder + "/../gt_rect_small_baidu/";
-    ReadGroundtruthRectFromFolder(gtFolder, "png", vGTsMaskRect, vGTsRect, beginIdx, endIdx - beginIdx + 1);
-    assert(vGTsMaskRect.size() == vGTsRect.size());
-
-    vGTsGray.reserve(vGTsMaskRect.size());
-    for (size_t i = 0, iend = vGTsMaskRect.size(); i < iend; ++i) {
-        Mat gtGray = Mat::zeros(vImages[0].size(), CV_8UC1);
-        vGTsMaskRect[i].copyTo(gtGray(vGTsRect[i]));
-
-        vector<vector<Point>> contours;
-        findContours(gtGray, contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
-
-        Mat toShow;
-        cvtColor(gtGray, toShow, COLOR_GRAY2BGR);
-        drawContours(toShow, contours, -1, Scalar(0,255,0));
-        imshow("mask input & contours", toShow);
-        waitKey(0);
-
-        if (contours.size() > 1) {
-            int maxIdx = 0, maxArea = 0;
-            for (int j = 0, jend = contours.size(); j < jend; ++j) {
-                Rect r = boundingRect(contours[j]);
-                if (r.area() > maxArea) {
-                    maxIdx = j;
-                    maxArea = r.area();
-                }
-            }
-            gtGray = Mat::zeros(gtGray.size(), CV_8UC1);
-            drawContours(gtGray, contours, maxIdx, Scalar(255), -1);
-
-            rectangle(toShow, boundingRect(contours[maxIdx]), Scalar(0,0,255), 2);
-            imshow("mask & max rect", toShow);
-            imshow("final input mask", gtGray);
-            waitKey(0);
-        }
-        vGTsGray.push_back(gtGray);
-    }
-#elif GET_GROUNDTRUTH_FROM_FACEPP
-    vector<Mat> vGTsMaskRect;
-    vector<Rect> vGTsRect;
-    const string gtFolder = str_folder + "/../gt_rect_small_facepp/";
-    ReadGroundtruthRectFromFolder(gtFolder, "jpg", vGTsMaskRect, vGTsRect, beginIdx, endIdx - beginIdx + 1);
-
-    vGTsGray.reserve(vGTsMaskRect.size());
-    for (size_t i = 0, iend = vGTsMaskRect.size(); i < iend; ++i) {
-        Mat gtGray = Mat::zeros(vImages[0].size(), CV_8UC1);
-        vGTsMaskRect[i].copyTo(gtGray(vGTsRect[i]));
-
-        Mat toShow;
-        cvtColor(gtGray, toShow, COLOR_GRAY2BGR);
-
-        threshold(gtGray, gtGray, 50, 0, THRESH_TOZERO);
-        normalize(gtGray, gtGray, 0, 255, NORM_MINMAX);
-
-        vector<vector<Point>> contours;
-        findContours(gtGray, contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
-
-        drawContours(toShow, contours, -1, Scalar(0,255,0), 2);
-        imshow("mask input & contous", toShow);
-        if (contours.size() > 1) {
-            int maxIdx = 0, maxArea = 0;
-            for (int j = 0, jend = contours.size(); j < jend; ++j) {
-                Rect r = boundingRect(contours[j]);
-                if (r.area() > maxArea) {
-                    maxIdx = j;
-                    maxArea = r.area();
-                }
-            }
-            gtGray = Mat::zeros(gtGray.size(), CV_8UC1);
-            drawContours(gtGray, contours, maxIdx, Scalar(255), -1);
-
-            imshow("mask input final", gtGray);
-            waitKey(0);
-        }
-        vGTsGray.push_back(gtGray);
-
-    }
-#else
-    ReadImageSequence(str_folder + "-gt", "jpg", vGTsColor, beginIdx, endIdx - beginIdx);
-    colorMask2Gray(vGTsColor, vGTsGray);
-#endif
-    resizeFlipRotateImages(vImages, scale);
-    resizeFlipRotateImages(vGTsGray, scale);
-
-    if (vImages.empty() || vGTsGray.empty())
-        exit(-1);
     const int N = vImages.size();
-    assert(N > 3);
-    assert(vImages.size() == vGTsGray.size());
 
-    // 掩膜边缘平滑
+    // 1.2读取前景掩模
+    {
+#if GET_GROUNDTRUTH_FROM_BAIDU
+        //! 注意通过NN得到的掩模可能非唯一/边界不完整/存在小孔洞, 需要过滤/膨胀处理
+        vector<Mat> vGTsMaskRect;
+        vector<Rect> vGTsRect;
+        const string gtFolder = str_folder + "/../gt_rect_small_baidu/";
+        ReadGroundtruthRectFromFolder(gtFolder, "png", vGTsMaskRect, vGTsRect, beginIdx, endIdx - beginIdx + 1);
+        assert(vGTsMaskRect.size() == vGTsRect.size());
+
+        vGTsGray.reserve(vGTsMaskRect.size());
+        for (size_t i = 0, iend = vGTsMaskRect.size(); i < iend; ++i) {
+            Mat gtGray = Mat::zeros(vImages[0].size(), CV_8UC1);
+            vGTsMaskRect[i].copyTo(gtGray(vGTsRect[i]));
+
+            vector<vector<Point>> contours;
+            findContours(gtGray, contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+
+            Mat toShow;
+            cvtColor(gtGray, toShow, COLOR_GRAY2BGR);
+            drawContours(toShow, contours, -1, Scalar(0,255,0));
+            imshow("mask input & contours", toShow);
+            waitKey(300);
+
+            if (contours.size() > 1) {
+                int maxIdx = 0, maxArea = 0;
+                for (int j = 0, jend = contours.size(); j < jend; ++j) {
+                    Rect r = boundingRect(contours[j]);
+                    if (r.area() > maxArea) {
+                        maxIdx = j;
+                        maxArea = r.area();
+                    }
+                }
+                gtGray = Mat::zeros(gtGray.size(), CV_8UC1);
+                drawContours(gtGray, contours, maxIdx, Scalar(255), -1);
+
+//                rectangle(toShow, boundingRect(contours[maxIdx]), Scalar(0,0,255), 2);
+//                imshow("mask & max rect", toShow);
+//                imshow("final input mask", gtGray);
+//                waitKey(0);
+            }
+            vGTsGray.push_back(gtGray);
+        }
+#elif GET_GROUNDTRUTH_FROM_FACEPP
+        vector<Mat> vGTsMaskRect;
+        vector<Rect> vGTsRect;
+        const string gtFolder = str_folder + "/../gt_rect_small_facepp/";
+        ReadGroundtruthRectFromFolder(gtFolder, "jpg", vGTsMaskRect, vGTsRect, beginIdx, endIdx - beginIdx + 1);
+        assert(vGTsMaskRect.size() == vGTsRect.size());
+
+        vGTsGray.reserve(vGTsMaskRect.size());
+        for (size_t i = 0, iend = vGTsMaskRect.size(); i < iend; ++i) {
+            Mat gtGray = Mat::zeros(vImages[0].size(), CV_8UC1);
+            vGTsMaskRect[i].copyTo(gtGray(vGTsRect[i]));
+
+            threshold(gtGray, gtGray, 50, 0, THRESH_TOZERO);
+            normalize(gtGray, gtGray, 0, 255, NORM_MINMAX);
+
+            vector<vector<Point>> contours;
+            findContours(gtGray, contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+
+//            Mat toShow;
+//            cvtColor(gtGray, toShow, COLOR_GRAY2BGR);
+//            drawContours(toShow, contours, -1, Scalar(0,255,0), 2);
+//            imshow("mask input & contous", toShow);
+//            waitKey(300);
+
+            if (contours.size() > 1) {
+                int maxIdx = 0, maxArea = 0;
+                for (int j = 0, jend = contours.size(); j < jend; ++j) {
+                    Rect r = boundingRect(contours[j]);
+                    if (r.area() > maxArea) {
+                        maxIdx = j;
+                        maxArea = r.area();
+                    }
+                }
+                gtGray = Mat::zeros(gtGray.size(), CV_8UC1);
+                drawContours(gtGray, contours, maxIdx, Scalar(255), -1);
+
+//                rectangle(toShow, boundingRect(contours[maxIdx]), Scalar(0,0,255), 2);
+//                imshow("mask & max rect", toShow);
+//                imshow("mask input final", gtGray);
+//                waitKey(300);
+            }
+            vGTsGray.push_back(gtGray);
+
+        }
+#else
+        ReadImageSequence(str_folder + "/../gt_full", "jpg", vGTsColor, beginIdx, endIdx - beginIdx + 1);
+        colorMask2Gray(vGTsColor, vGTsGray);
+#endif
+        resizeFlipRotateImages(vImages, scale);
+        resizeFlipRotateImages(vGTsGray, scale);
+
+        if (vImages.empty() || vGTsGray.empty())
+            exit(-1);
+
+        assert(N > 3);
+        assert(vImages.size() == vGTsGray.size());
+    }
+    destroyAllWindows();
+
+    // 1.3掩膜边缘平滑
     const Mat kernel1 = getStructuringElement(MORPH_RECT, Size(5, 5));
     const Mat kernel2 = getStructuringElement(MORPH_ELLIPSE, Size(7, 7));
     const Mat kernel3 = getStructuringElement(MORPH_ELLIPSE, Size(9, 9));
@@ -184,40 +193,39 @@ int main(int argc, char* argv[])
         tmpMask1 = mask.clone();   // 形态学操作前
         bitwise_and(vImages[i], 255, show1, tmpMask1);
 
-#if GET_GROUNDTRUTH_FROM_BAIDU
-        morphologyEx(mask, mask, MORPH_DILATE, kernel2, Point(-1,-1), 1);
-        smoothMaskWeightEdge(mask, mask, 3, 15);
-#elif GET_GROUNDTRUTH_FROM_FACEPP
-//        morphologyEx(mask, mask, MORPH_DILATE, kernel1, Point(-1,-1), 1);
-        mask.setTo(255, mask);
-        smoothMaskWeightEdge(mask, mask, 3, 5);
-#else
+        compare(mask, 0, mask, CMP_GT);
         morphologyEx(mask, mask, MORPH_OPEN, kernel1, Point(-1,-1), 1);  // 开操作(先腐蚀再膨胀),平滑边界, 去噪点
         morphologyEx(mask, mask, MORPH_CLOSE, kernel2, Point(-1,-1), 1); // 去孔洞
         morphologyEx(mask, mask, MORPH_OPEN, kernel3, Point(-1,-1), 1);  // 平滑边界
+#if GET_GROUNDTRUTH_FROM_BAIDU
+        smoothMaskWeightEdge(mask, mask, 3, 0);
+#elif GET_GROUNDTRUTH_FROM_FACEPP
+//        morphologyEx(mask, mask, MORPH_DILATE, kernel1, Point(-1,-1), 1);
+//        mask.setTo(255, mask);
+        smoothMaskWeightEdge(mask, mask, 5, 0);
 #endif
         vForegroundMasks.push_back(mask);
 
-        Mat foregroundFiltered;
-        boxFilter(mask, foregroundFiltered, -1, Size(3,3), Point(-1,-1), true, BORDER_CONSTANT);
-//        GaussianBlur(mask, foregroundFiltered, Size(5,5), 3, 3, BORDER_CONSTANT);
-
+#define SHOW_MASK_PREPROCESS_RESULT 0
+#if     SHOW_MASK_PREPROCESS_RESULT
         bitwise_and(vImages[i], 255, show2, mask);
-        bitwise_and(vImages[i], 255, show3, foregroundFiltered);
-        imshow("平滑前", show1);
-        imshow("平滑后", show2);
-        imshow("滤波后", show3);
+        imshow("前景掩模原始输入", show1);
+        imshow("前景掩模平滑后", show2);
         string txt1 = "/home/vance/output/ms/" + to_string(i+1) + "前景掩模原始.jpg";
-        string txt2 = "/home/vance/output/ms/" + to_string(i+1) + "前景掩模膨胀后.jpg";
+        string txt2 = "/home/vance/output/ms/" + to_string(i+1) + "前景掩模平滑.jpg";
         imwrite(txt1, show1);
         imwrite(txt2, show2);
 
-        waitKey(0);
+        waitKey(500);
+#endif
     }
     destroyAllWindows();
-    exit(0);
+//    exit(0);
 
-#if DEBUG_BLEND_SINGLE_FOREGROUND
+
+#define DEBUG_BLEND_SINGLE_FOREGROUND   0
+    {
+#if     DEBUG_BLEND_SINGLE_FOREGROUND
     ms::cvMultiBandBlender* blender1 = new ms::cvMultiBandBlender();
     ms::cvFeatherBlender* blender2 = new ms::cvFeatherBlender(0.1, false);
     ms::cvSeamlessCloning* blender3 = new ms::cvSeamlessCloning();
@@ -281,10 +289,11 @@ int main(int argc, char* argv[])
     }
 
     exit(0);
+
 #endif
+    }
 
     /// calc the result in different gaps
-    int maxFores = 8, minFores = 3;  // 前景最多存在9个, 最少3个
     vector<Mat> vImgsToProcess = vImages;
 //    vector<int> vIdxToProcess{0, 1, 2, 3, 4, 5, 6, 7, 8};
 //    vector<vector<int>> vvIdxPerIter;
@@ -293,11 +302,11 @@ int main(int argc, char* argv[])
 
     vector<int> vIdxToProcess{0, 1, 2, 3, 4, 5, 6, 7};
     vector<vector<int>> vvIdxPerIter;
-    vvIdxPerIter.emplace_back(vector<int>{0, 2, 3, 4, 5, 7});
     vvIdxPerIter.emplace_back(vector<int>{0, 1, 2, 3, 4, 5, 6, 7});
 
     timer.stop();
-    TIMER("系统初始化耗时(s): " << timer.getTimeSec());
+    TIMER("1.系统初始化耗时(s): " << timer.getTimeSec());
+    double t1, t2, t3;
 
     const Mat kernelX = getStructuringElement(MORPH_ELLIPSE, Size(20, 20));
 
@@ -305,7 +314,7 @@ int main(int argc, char* argv[])
     for (int k = 0; k < vvIdxPerIter.size(); ++k) {
         timer.start();
 
-        // 1.前景拼接融合
+        // 2.前景拼接融合
         const vector<int>& vIdxThisIter = vvIdxPerIter[k];
         const Mat pano = vImgsToProcess.front().clone();
         const Rect disRoi(0, 0, pano.cols, pano.rows);
@@ -316,28 +325,21 @@ int main(int argc, char* argv[])
             const int& imgIdx = vIdxThisIter[j];
             const Mat& frame = vImages[imgIdx];
             const Mat& foreMask = vForegroundMasks[imgIdx];
-            Mat foreMaskSmooth;
+            Mat foreMaskSmooth = foreMask;
 
-#define EXPAND_FOREGROUND_MASK
-#ifdef EXPAND_FOREGROUND_MASK
+#if !GET_GROUNDTRUTH_FROM_BAIDU && !GET_GROUNDTRUTH_FROM_FACEPP
+#define EXPAND_FOREGROUND_MASK 1
+#if EXPAND_FOREGROUND_MASK
             // 扩大前景的掩模, 但在前景拼接时要注意处理扩大出来那部分的掩模权重
-            smoothMaskWeightEdge(foreMask, foreMaskSmooth, 3, 15);
+//            smoothMaskWeightEdge(foreMask, foreMaskSmooth, 1, 2);
+            smoothMaskWeightEdge(foreMask, foreMaskSmooth, 2, 5);
 #else
-            smoothMaskWeightEdge(foreMask, foreMaskSmooth, 5);  // 过渡边缘
+            smoothMaskWeightEdge(foreMask, foreMaskSmooth, 3);  // 过渡边缘
 #endif
-//            imshow("foreMaskSmooth", foreMaskSmooth);
+//            imshow("前景掩模过渡前", foreMask);
+//            imshow("前景掩模过渡后", foreMaskSmooth);
 //            waitKey(0);
-
-//            Mat foregroundFiltered;
-//            bilateralFilter(foreMaskSmooth, foregroundFiltered, 7, 64, 5);
-
-//            Mat show1, show2;
-//            bitwise_and(vImages[imgIdx], 255, show1, foreMaskSmooth);
-//            bitwise_and(vImages[imgIdx], 255, show2, foregroundFiltered);
-//            imshow("滤波前", show1);
-//            imshow("滤波后", show2);
-//            waitKey(0);
-
+#endif
             // blender
             Mat frame_S;
             frame.convertTo(frame_S, CV_16SC3);
@@ -347,26 +349,43 @@ int main(int argc, char* argv[])
         Mat allForeground, allForeground_S, allForegroundMask;
         blender->blend(allForeground_S, allForegroundMask);
         allForeground_S.convertTo(allForeground, CV_8UC3);
+        const Mat overlappedEdge = blender->getOverlappedEdgesMask(0);
+        const Mat overlappedEdgesMask = blender->getOverlappedEdgesMask(3);
+        const Rect foregroundRect = boundingRect(allForegroundMask);
 
-        Mat allForegroundShow = allForeground.clone();
-        vector<vector<Point>> contours;
-        findContours(allForegroundMask, contours, RETR_LIST, CHAIN_APPROX_SIMPLE);
-        drawContours(allForegroundShow, contours, -1, Scalar(0,255,0), 2);
-        imshow("allForeground", allForegroundShow);
-        imshow("allForeground mask", allForegroundMask);
+        timer.stop();
+        t1 = timer.getTimeSec();
+        TIMER("2.前景拼接融合耗时(s): " << t1);
+
         string txt1 = "/home/vance/output/ms/" + to_string(vIdxThisIter.size()) + "个前景拼接融合结果-" + strMode1 + ".jpg";
         imwrite(txt1, allForeground);
-//        waitKey(0);
+        timer.start();
+
+        // 3.前景拼接结果改善(边缘滤波)
+        Mat allForegroundShow = allForeground.clone();
+        vector<vector<Point>> contours;
+        findContours(allForegroundMask(foregroundRect), contours, RETR_LIST, CHAIN_APPROX_SIMPLE);
+        drawContours(allForegroundShow(foregroundRect), contours, -1, Scalar(255,0,0), 2);  // 画前景轮廓
+        allForegroundShow.setTo(Scalar(0,255,0), overlappedEdge);  // 画重叠区域轮廓
+        imshow("所有前景轮廓(蓝)&重叠区域(绿)", allForegroundShow);
+        waitKey(0);
 //        continue;
 
-        Mat foregroundFiltered;
-        bilateralFilter(allForeground, foregroundFiltered, -1, 15, 30, BORDER_CONSTANT);
-//        foregroundFiltered = guidedFilter(allForeground, 9, 0.01);
+        Mat foregroundFiltered, foregroundFiltered_S;
+        overlappedEdgesSmoothing(allForeground/*(foregroundRect)*/, overlappedEdgesMask/*(foregroundRect)*/, foregroundFiltered, 0.3);
+//        bilateralFilter(allForeground, foregroundFiltered, 5, 15, 30, BORDER_CONSTANT);
+//        ximgproc::guidedFilter(I, allForeground, foregroundFiltered, 16, 0.02*255*255);
+        foregroundFiltered.convertTo(foregroundFiltered_S, CV_16SC3);
 
-        string txt5 = "/home/vance/output/ms/" + to_string(vIdxThisIter.size()) + "个前景拼接融合结果(EF).jpg";
-        imwrite(txt5, foregroundFiltered);
+        timer.stop();
+        t2 = timer.getTimeSec();
+        TIMER("3.前景拼接结果改善(s): " << t2);
 
-        // 2.前背景融合. 把pano和前景对应的mask区域的稍微缩收/扩张, 设置平滑的权重过渡, 然后再融合.
+        string txt2 = "/home/vance/output/ms/" + to_string(vIdxThisIter.size()) + "个前景拼接融合结果(EF).jpg";
+        imwrite(txt2, foregroundFiltered);
+        timer.start();
+
+        // 4.前背景融合. 把pano和前景对应的mask区域的稍微缩收/扩张, 设置平滑的权重过渡, 然后再融合.
         //! 暂时不能用多频段融合.
 //        ms::cvSeamlessCloning* blender2 = new ms::cvSeamlessCloning();
         ms::cvFeatherBlender* blender2 = new ms::cvFeatherBlender(0.1, false);
@@ -377,46 +396,41 @@ int main(int argc, char* argv[])
         Mat foregroundMaskFinal, backgroundMaskFinal, maskFinal;
         smoothMaskWeightEdge(allForegroundMask, foregroundMaskFinal, 0);  // 过渡边缘
         bitwise_not(foregroundMaskFinal, backgroundMaskFinal);
-        imshow("foreground maskFinal", foregroundMaskFinal);
-        imshow("background maskFinal", backgroundMaskFinal);
 
-        Mat fmf, fmfOut;
-        cvtColor(foregroundMaskFinal, fmf, COLOR_GRAY2BGR);
-        hconcat(allForeground, fmf, fmfOut);
-        string txt0 = "/home/vance/output/前景与掩模-" + to_string(vIdxThisIter.size()) + ".jpg";
-        imwrite(txt0, fmfOut);
+//        Mat fmf, fmfOut;
+//        cvtColor(foregroundMaskFinal, fmf, COLOR_GRAY2BGR);
+//        hconcat(allForeground, fmf, fmfOut);
+//        string txt3 = "/home/vance/output/前景与掩模-" + to_string(vIdxThisIter.size()) + ".jpg";
+//        imwrite(txt3, fmfOut);
 
         Mat pano_S, result, resultMask;
         pano.convertTo(pano_S, CV_16SC3);
         blender2->feed(pano_S, backgroundMaskFinal, Point(0, 0));
-        blender2->feed(allForeground_S/*foregroundFiltered_S*/, foregroundMaskFinal, Point(0, 0));
+        blender2->feed(/*allForeground_S*/foregroundFiltered_S, foregroundMaskFinal, Point(0, 0));
         blender2->blend(result, resultMask);
-        result.convertTo(result, CV_8U);
+        result.convertTo(result, CV_8UC3);
 
-//        //! TODO 边缘要滤波去除毛刺
-        Mat resultPoisson;
-        Rect foreRectPosition = boundingRect(foregroundMaskFinal);
-        Point2f center = (foreRectPosition.tl() + foreRectPosition.br()) * 0.5;
-        cvSeamlessClone(allForeground, pano, allForegroundMask, center, resultPoisson, NORMAL_CLONE);
-        rectangle(resultPoisson, foreRectPosition, Scalar(0,0,255));
-        imshow("resultPoisson", resultPoisson);
-        string txt4 = "/home/vance/output/ms/" + to_string(vIdxThisIter.size()) + "个前景最终结果-泊松.jpg";
-        imwrite(txt4, resultPoisson);
+//        Mat resultPoisson;
+//        Point2f center = (foreRectPosition.tl() + foreRectPosition.br()) * 0.5;
+//        cvSeamlessClone(allForeground, pano, allForegroundMask, center, resultPoisson, NORMAL_CLONE);
+//        rectangle(resultPoisson, foreRectPosition, Scalar(0,0,255));
+//        imshow("resultPoisson", resultPoisson);
+//        string txt4 = "/home/vance/output/ms/" + to_string(vIdxThisIter.size()) + "个前景最终结果-泊松.jpg";
+//        imwrite(txt4, resultPoisson);
 
 //        namedWindow("blend result", WINDOW_GUI_EXPANDED);
 //        hconcat(fmfOut, result, result);
         imshow("blend result", result);
 
-        string txt2 = "/home/vance/output/ms/" + to_string(vIdxThisIter.size()) + "个前景最终结果-" + strMode1 + "+" + strMode2 + ".jpg";
-        imwrite(txt2, result);
+        timer.stop();
+        t3 = timer.getTimeSec();
+        TIMER("4.前背景融合耗时(s): " << t3);
+        TIMER(vIdxThisIter.size() << "个前景, 算法整体耗时(s): " << t1+t2+t3);
 
-//        string txt3 = "/home/vance/output/ms/" + to_string(vIdxThisIter.size()) + "个前景最终结果(滤波).jpg";
-//        imwrite(txt3, resultFiltered);
+        string txt5 = "/home/vance/output/ms/" + to_string(vIdxThisIter.size()) + "个前景最终结果-" + strMode1 + "+" + strMode2 + ".jpg";
+        imwrite(txt5, result);
 
         waitKey(300);
-
-        timer.stop();
-        TIMER(k << "个前景, 算法整体耗时(s): " << timer.getTimeSec());
     }
 
     waitKey(0);

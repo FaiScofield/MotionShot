@@ -85,6 +85,9 @@ void cvBlender::prepare(Rect dst_roi)
     dst_mask_.create(dst_roi.size(), CV_8U);
     dst_mask_.setTo(Scalar::all(0));
     dst_roi_ = dst_roi;
+
+    overlapped_edges_mask_.create(dst_roi.size(), CV_8U);
+    overlapped_edges_mask_.setTo(Scalar::all(0));
 }
 
 
@@ -163,6 +166,7 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
 
     Mat weight_map = weight_map_.getMat(ACCESS_READ);
     Mat dst_weight_map = dst_weight_map_.getMat(ACCESS_RW);
+    Mat o1 = dst_weight_map.clone();
 
     int dx = tl.x - dst_roi_.x;
     int dy = tl.y - dst_roi_.y;
@@ -170,9 +174,14 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
 #if ENABLE_DEBUG_RESULT_FEATHER_FEED1 && ENABLE_DEBUG_RESULT
     Mat disU;
     dst.convertTo(disU, CV_8U);
-    imshow("dst before feed", disU);
-    imshow("dst_weight_map_ before feed", dst_weight_map_);
-    imshow("mask input", weight_map_);
+//    imshow("dst before feed", disU);
+//    imshow("dst_weight_map_ before feed", dst_weight_map_);
+//    Mat foreInput, imgU, maskU;
+//    img.convertTo(imgU, CV_8UC3);
+//    maskU = mask.getMat();
+//    bitwise_and(imgU, 255, foreInput, maskU);
+//    imshow("mask input", maskU);
+//    imshow("foreground input", foreInput);
 #endif
 
     // 当前图像的像素乘上对应权重加到输出图像上, 并记录每个pixel对应的总权重和
@@ -185,12 +194,13 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
 
         for (int x = 0; x < img.cols; ++x) {
             if (enable_cover_) {
-                if (abs(1.f - weight_row[x]) < 1e-6f) {  // 权值为1, 直接覆盖
+                if (weight_row[x] > 0.9999f) {  // 权值为1, 直接覆盖
                     dst_row[dx + x].x = static_cast<short>(src_row[x].x * weight_row[x]);
                     dst_row[dx + x].y = static_cast<short>(src_row[x].y * weight_row[x]);
                     dst_row[dx + x].z = static_cast<short>(src_row[x].z * weight_row[x]);
                     dst_weight_row[dx + x] = weight_row[x];
-                } else if (abs(1.f - dst_weight_row[dx + x]) < 1e-6f) {
+                } else if (dst_weight_row[dx + x] == 1.f) {
+//                    cout << weight_row[dx + x] << ", ";
                     // 待添加区域已经有前景则不添加
                 } else {
                     dst_row[dx + x].x += static_cast<short>(src_row[x].x * weight_row[x]);
@@ -207,9 +217,32 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
         }
     }
 
+    // 计算重叠区域的边缘掩模
+    Mat o2 = mask.getMat().clone();
+    o1.convertTo(o1, CV_32FC1, 1.f/255.f);
+    o2.convertTo(o2, CV_32FC1, 1.f/255.f);
+    Mat overlapped = o1 + o2;
+    compare(overlapped, 1.f, overlapped, CMP_GT);
+
+    Mat edge, ignoreArea;
+    morphologyEx(overlapped, edge, MORPH_GRADIENT, Mat());  // 重叠区域边缘
+    const Mat kernel = getStructuringElement(MORPH_ELLIPSE, Size(7,7));
+    morphologyEx(mask, ignoreArea, MORPH_ERODE, Mat(), kernel, 1);   // 考虑前景覆盖
+    bitwise_and(edge, 0, edge, ignoreArea);
+//    imshow("重叠区域边缘(考虑覆盖)", edge);
+
+    overlapped_edges_mask_ += edge;
+    threshold(overlapped_edges_mask_, overlapped_edges_mask_, 255, 255, THRESH_TRUNC);
+
 #if ENABLE_DEBUG_RESULT_FEATHER_FEED1 && ENABLE_DEBUG_RESULT
+    imshow("tatal edge", overlapped_edges_mask_);
+
+    vector<vector<Point>> contours;
+    findContours(overlapped, contours, RETR_LIST, CHAIN_APPROX_SIMPLE);
+
     dst.convertTo(disU, CV_8U);
-    imshow("dst after feed", disU);
+    drawContours(disU, contours, -1, Scalar(0,255,0), 2);
+    imshow("dst after feed & overlapped area(green)", disU);
     imshow("dst_weight_map_ after feed", dst_weight_map_);
     waitKey(0);
 #endif
@@ -344,6 +377,20 @@ Rect cvFeatherBlender::createWeightMaps(const std::vector<UMat>& masks,
     }
 
     return dst_roi;
+}
+
+
+Mat cvFeatherBlender::getOverlappedEdgesMask(int size) const
+{
+    Mat res;
+
+    if (size > 1) {
+        const Mat kernel = getStructuringElement(MORPH_RECT, Size(size, size));
+        dilate(overlapped_edges_mask_, res, kernel);
+    } else {
+        res = overlapped_edges_mask_.clone();
+    }
+    return res;
 }
 
 

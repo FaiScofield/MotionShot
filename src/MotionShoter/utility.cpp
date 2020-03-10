@@ -42,7 +42,7 @@ void ReadImageNamesFromFolder(const string& folder, vector<string>& names)
         cerr << "[Error] No image data in the folder!" << endl;
         return;
     } else {
-        cout << "[Info ] Read " << vImageNames.size() << " images in the folder." << endl;
+        cout << "[Info ] Read " << vImageNames.size() << " images in " << folder << endl;
     }
 
     vImageNames.shrink_to_fit();
@@ -80,7 +80,7 @@ void ReadImagesFromFolder_lasiesta(const string& folder, vector<Mat>& imgs)
         cerr << "[Error] No image data in the folder!" << endl;
         return;
     } else {
-        cout << "[Info ] Read " << allImages.size() << " images in the folder." << endl;
+        cout << "[Info ] Read " << allImages.size() << " images in " << folder << endl;
     }
 
     imgs.reserve(allImages.size());
@@ -116,10 +116,10 @@ void ReadGroundtruthFromFolder_lasiesta(const string& folder, vector<Mat>& imgs)
     }
 
     if (allImages.empty()) {
-        cerr << "[Error] No gt image data in the folder!" << endl;
+        cerr << "[Error] No gt image data in " << folder << endl;
         return;
     } else {
-        cout << "[Info ] Read " << allImages.size() << " gt images in the folder." << endl;
+        cout << "[Info ] Read " << allImages.size() << " gt images in " << folder << endl;
     }
 
     imgs.reserve(allImages.size());
@@ -179,10 +179,10 @@ void ReadImageSequence_huawei(const string& folder, vector<Mat>& imgs, int start
     }
 
     if (allImages.empty()) {
-        cerr << "[Error] No image data in the folder!" << endl;
+        cerr << "[Error] No image data in " << folder << endl;
         return;
     } else {
-        cout << "[Info ] Read tatal " << allImages.size() << " images in the folder." << endl;
+        cout << "[Info ] Read tatal " << allImages.size() << " images in " << folder << endl;
     }
     assert(startIndex < allImages.size());
 
@@ -285,7 +285,7 @@ void ReadGroundtruthRectFromFolder(const string& folder, const string& suffix, v
         rect_param_file = pre + "../image_rect/rect_param.txt";
         ifs.open(rect_param_file);
         if (!ifs.is_open()) {
-            cerr << "Cannot open the 'rect_param.txt' file!" << endl;
+            cerr << "Cannot open the file " << rect_param_file << endl;
             return;
         }
     }
@@ -309,7 +309,7 @@ void ReadGroundtruthRectFromFolder(const string& folder, const string& suffix, v
         vMasks.push_back(imread(gtFile, IMREAD_GRAYSCALE));
     }
 
-    cout << "[Info ] Read " << vMasks.size() << " gt files in the folder." << endl;
+    cout << "[Info ] Read " << vMasks.size() << " gt files in " << folder << endl;
 
     masks.swap(vMasks);
 }
@@ -539,7 +539,7 @@ void drawhistogram(const Mat& src, Mat& histGray, const Mat& mask, int binSize)
 
     // 直方图归一化
     normalize(hist, hist, 1.0, 0.0, NORM_MINMAX);  // 32FC1
-                                                   //    cout << "hist norm = " << hist.t() << endl;
+//    cout << "hist norm = " << hist.t() << endl;
 
     // 在直方图中画出直方图
     const int boardSize = 5;
@@ -659,16 +659,16 @@ void shrinkRoi(const Mat& src, Mat& dst, int size)
 {
     assert(src.type() == CV_8UC1);
 
-    //    imshow("origin mask", src);
+//    imshow("origin mask", src);
 
-    //    Mat tmp1, tmp2;
-    //    cvtColor(src, tmp1, COLOR_GRAY2BGR);
+//    Mat tmp1, tmp2;
+//    cvtColor(src, tmp1, COLOR_GRAY2BGR);
 
     Mat kernel = getStructuringElement(MORPH_RECT, Size(size, size));
     erode(src, dst, kernel, Point(-1, -1), 1, BORDER_CONSTANT);
-    //    imshow("mask shrink", dst);
+//    imshow("mask shrink", dst);
 
-    //    waitKey(0);
+//    waitKey(0);
 }
 
 /**
@@ -700,7 +700,7 @@ void smoothMaskWeightEdge(const cv::Mat& src, cv::Mat& dst, int b1, int b2)
         normalize(weightAreaValue, weightAreaValue, 0, 255, NORM_MINMAX);  // 归一化
         add(noWeightMask, weightAreaValue, dst);  // 不过渡区域(保留权值为1) + 过渡权区域 = 目标掩模
     } else if (b1 < 2 && b2 >= 2) {  // 扩大
-        const Mat kernel2 = getStructuringElement(MORPH_CROSS, Size(2 * b2, 2 * b2));
+        const Mat kernel2 = getStructuringElement(MORPH_RECT, Size(2 * b2, 2 * b2));
         dilate(src, noWeightMask, kernel2);
         weightArea = noWeightMask - src;
         distanceTransform(noWeightMask, weightDistance, DIST_C, 3);
@@ -712,7 +712,7 @@ void smoothMaskWeightEdge(const cv::Mat& src, cv::Mat& dst, int b1, int b2)
         assert(b1 >= 2 && b2 >= 2);
 
         const Mat kernel1 = getStructuringElement(MORPH_ELLIPSE, Size(2 * b1, 2 * b1));
-        const Mat kernel2 = getStructuringElement(MORPH_CROSS, Size(2 * b2, 2 * b2));
+        const Mat kernel2 = getStructuringElement(MORPH_RECT, Size(2 * b2, 2 * b2));
 
         Mat tmp1, tmp2;
         erode(src, tmp1, kernel1);
@@ -794,5 +794,363 @@ Mat guidedFilter(const Mat& src, int radius, double eps)
     return dstImage;
 }
 
+
+void applyEdgeFilter(cv::Mat& img, int x, int y, int dir, Mat& toShow)
+{
+    assert(img.type() == CV_8UC1);
+
+//    Mat toShow;
+//    cvtColor(img, toShow, COLOR_GRAY2BGR);
+
+    static const vector<float> kernel{0.1f, 0.4f, 0.f, 0.4f, 0.1f};
+    switch (dir) {
+    case 1:
+        if (x - 2 >= 0 && x + 2 < img.cols) {
+            const uchar I0 = img.at<uchar>(y, x - 2);
+            const uchar I4 = img.at<uchar>(y, x + 2);
+            if (I0 > 0 && I4 > 0) {
+                const uchar I1 = img.at<uchar>(y, x - 1);
+                const uchar I3 = img.at<uchar>(y, x + 1);
+                uchar& I2 = img.at<uchar>(y, x);
+//                cout << "I of image at (" << y << "," << x << "), [" << (int)I0 << ", " << (int)I1
+//                     << ", " << (int)I2 << ", " << (int)I3 << ", " << (int)I4 << "] ===> ";
+                I2 = kernel[0] * I0 + kernel[1] * I1 + kernel[2] * I2 + kernel[3] * I3 + kernel[4] * I4;
+//                cout << (int)I2 << endl;
+                circle(toShow, Point(x,y), 1, Scalar(0,0,255));
+            }
+        }
+        break;
+    case 2:
+        if (y - 2 >= 0 && y + 2 < img.rows) {
+            const uchar I0 = img.at<uchar>(y - 2, x);
+            const uchar I4 = img.at<uchar>(y + 2, x);
+            if (I0 > 0 && I4 > 0) {
+                const uchar I1 = img.at<uchar>(y - 1, x);
+                const uchar I3 = img.at<uchar>(y + 1, x);
+                uchar& I2 = img.at<uchar>(y, x);
+//                cout << "I of image at (" << y << "," << x << "), [" << (int)I0 << ", " << (int)I1
+//                     << ", " << (int)I2 << ", " << (int)I3 << ", " << (int)I4 << "] ===> ";
+                I2 = kernel[0] * I0 + kernel[1] * I1 + kernel[2] * I2 + kernel[3] * I3 + kernel[4] * I4;
+//                cout << (int)I2 << endl;
+                circle(toShow, Point(x,y), 1, Scalar(0,255,0));
+            }
+        }
+        break;
+    case 3:
+        if (x - 2 >= 0 && x + 2 < img.cols && y - 2 >= 0 && y + 2 < img.rows) {
+            const uchar I0 = img.at<uchar>(y - 2, x - 2);
+            const uchar I4 = img.at<uchar>(y + 2, x + 2);
+            if (I0 > 0 && I4 > 0) {
+                const uchar I1 = img.at<uchar>(y - 1, x - 1);
+                const uchar I3 = img.at<uchar>(y + 1, x + 1);
+                uchar& I2 = img.at<uchar>(y, x);
+//                cout << "I of image at (" << y << "," << x << "), [" << (int)I0 << ", " << (int)I1
+//                     << ", " << (int)I2 << ", " << (int)I3 << ", " << (int)I4 << "] ===> ";
+                I2 = kernel[0] * I0 + kernel[1] * I1 + kernel[2] * I2 + kernel[3] * I3 + kernel[4] * I4;
+//                cout << (int)I2 << endl;
+                circle(toShow, Point(x,y), 1, Scalar(255,0,0));
+            }
+        }
+        break;
+    case 4:
+        if (x - 2 >= 0 && x + 2 < img.cols && y - 2 >= 0 && y + 2 < img.rows) {
+            const uchar I0 = img.at<uchar>(y + 2, x - 2);
+            const uchar I4 = img.at<uchar>(y - 2, x + 2);
+            if (I0 > 0 && I4 > 0) {
+                const uchar I1 = img.at<uchar>(y + 1, x - 1);
+                const uchar I3 = img.at<uchar>(y - 1, x + 1);
+                uchar& I2 = img.at<uchar>(y, x);
+//                cout << "I of image at (" << y << "," << x << "), [" << (int)I0 << ", " << (int)I1
+//                     << ", " << (int)I2 << ", " << (int)I3 << ", " << (int)I4 << "] ===> ";
+                I2 = kernel[0] * I0 + kernel[1] * I1 + kernel[2] * I2 + kernel[3] * I3 + kernel[4] * I4;
+//                cout << (int)I2 << endl;
+                circle(toShow, Point(x,y), 1, Scalar(255,255,255));
+            }
+        }
+        break;
+    default:
+        break;
+    }
+
+//    imshow("Filter point", toShow);
+//    waitKey(0);
+}
+
+void applyEdgeFilter(cv::Mat& img, int x, int y, int dir)
+{
+    assert(img.type() == CV_8UC1);
+
+//    static const vector<float> kernel{0.1f, 0.4f, 0.f, 0.4f, 0.1f};
+    static const vector<float> kernel{0.2f, 0.3f, 0.f, 0.3f, 0.2f};
+    switch (dir) {
+    case 1:
+        if (x - 2 >= 0 && x + 2 < img.cols) {
+            const uchar I0 = img.at<uchar>(y, x - 2);
+            const uchar I4 = img.at<uchar>(y, x + 2);
+            if (I0 > 0 && I4 > 0) {
+                const uchar I1 = img.at<uchar>(y, x - 1);
+                const uchar I3 = img.at<uchar>(y, x + 1);
+                uchar& I2 = img.at<uchar>(y, x);
+                I2 = kernel[0] * I0 + kernel[1] * I1 + kernel[2] * I2 + kernel[3] * I3 + kernel[4] * I4;
+            }
+        }
+        break;
+    case 2:
+        if (y - 2 >= 0 && y + 2 < img.rows) {
+            const uchar I0 = img.at<uchar>(y - 2, x);
+            const uchar I4 = img.at<uchar>(y + 2, x);
+            if (I0 > 0 && I4 > 0) {
+                const uchar I1 = img.at<uchar>(y - 1, x);
+                const uchar I3 = img.at<uchar>(y + 1, x);
+                uchar& I2 = img.at<uchar>(y, x);
+                I2 = kernel[0] * I0 + kernel[1] * I1 + kernel[2] * I2 + kernel[3] * I3 + kernel[4] * I4;
+            }
+        }
+        break;
+    case 3:
+        if (x - 2 >= 0 && x + 2 < img.cols && y - 2 >= 0 && y + 2 < img.rows) {
+            const uchar I0 = img.at<uchar>(y - 2, x - 2);
+            const uchar I4 = img.at<uchar>(y + 2, x + 2);
+            if (I0 > 0 && I4 > 0) {
+                const uchar I1 = img.at<uchar>(y - 1, x - 1);
+                const uchar I3 = img.at<uchar>(y + 1, x + 1);
+                uchar& I2 = img.at<uchar>(y, x);
+                I2 = kernel[0] * I0 + kernel[1] * I1 + kernel[2] * I2 + kernel[3] * I3 + kernel[4] * I4;
+            }
+        }
+        break;
+    case 4:
+        if (x - 2 >= 0 && x + 2 < img.cols && y - 2 >= 0 && y + 2 < img.rows) {
+            const uchar I0 = img.at<uchar>(y + 2, x - 2);
+            const uchar I4 = img.at<uchar>(y - 2, x + 2);
+            if (I0 > 0 && I4 > 0) {
+                const uchar I1 = img.at<uchar>(y + 1, x - 1);
+                const uchar I3 = img.at<uchar>(y - 1, x + 1);
+                uchar& I2 = img.at<uchar>(y, x);
+                I2 = kernel[0] * I0 + kernel[1] * I1 + kernel[2] * I2 + kernel[3] * I3 + kernel[4] * I4;
+            }
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+/**
+ * @brief overlappedEdgesSmoothing  重叠区域的边缘平滑, 主要是为了消除前景重叠区域边缘处的锯齿
+ * @param src   拼接后的前景图
+ * @param mask  前景图中重叠区域的边缘掩模(降低计算量, 限制处理范围)
+ * @param dst   结果图
+ */
+void overlappedEdgesSmoothing(const cv::Mat& src, const cv::Mat& mask, cv::Mat& dst, double scale)
+{
+#define ENABLE_DEBUG_EDGE_FILTER    1
+#define SMOOTH_UPLOARD  0   // 梯度上采样后计算(反之下采样)
+
+#if SMOOTH_UPLOARD
+    scale = 1.;
+#endif
+    const double invScale = 1. / scale;
+
+    // 1.下采样1/4并在Y域上求解4个方向的梯度
+    Mat srcScaled, srcGray;
+    cvtColor(src, srcGray, COLOR_BGR2GRAY);
+    resize(srcGray, srcScaled, Size(), scale, scale);
+
+    vector<Mat> vEdges_F(4), vKernels(4);
+    vKernels[0] = (Mat_<char>(3, 3) << -3, 0, 3, -10, 0, 10, -3, 0, 3);
+    vKernels[1] = (Mat_<char>(3, 3) << -3, -10, -3, 0, 0, 0, 3, 10, 3);
+    vKernels[2] = (Mat_<char>(3, 3) << -10, -3, 0, -3, 0, 3, 0, 3, 10);
+    vKernels[3] = (Mat_<char>(3, 3) << 0, 3, 10, -3, 0, 3, -10, -3, 0);
+    for (int i = 0; i < 4; ++i) {
+        filter2D(srcScaled, vEdges_F[i], CV_32F, vKernels[i]);
+#if ENABLE_DEBUG && ENABLE_DEBUG_EDGE_FILTER
+//        Mat edge_U;
+//        vEdges_F[i].convertTo(edge_U, CV_8UC1);
+//        normalize(edge_U, edge_U, 0, 255, NORM_MINMAX);
+//        const string windName = "vEdges_U_" + to_string(i+1);
+//        imshow(windName, edge_U);
+#endif
+    }
+
+    // 2.选出4个方向梯度的最大值并标记梯度方向
+    Mat maxEdge_F = Mat::zeros(srcScaled.size(), CV_32FC1);
+    Mat dstLabel = Mat::zeros(srcScaled.size(), CV_8UC1);
+#if ENABLE_DEBUG && ENABLE_DEBUG_EDGE_FILTER
+    vector<Point3_<uchar>> vLableColor(5);
+    vLableColor[0] = Point3_<uchar>(0,0,0);
+    vLableColor[1] = Point3_<uchar>(0,0,255);
+    vLableColor[2] = Point3_<uchar>(0,255,0);
+    vLableColor[3] = Point3_<uchar>(255,0,0);
+    vLableColor[4] = Point3_<uchar>(255,255,255);
+    Mat distLabelColor(srcScaled.size(), CV_8UC3);
+
+    for (int y = 0; y < srcScaled.rows; ++y) {
+        float* dst_row = maxEdge_F.ptr<float>(y);
+        char* label_row = dstLabel.ptr<char>(y);
+        Point3_<uchar>* distLabelColor_row = distLabelColor.ptr<Point3_<uchar>>(y);
+
+        for (int x = 0; x < srcScaled.cols; ++x) {
+            int label = 0;
+            float maxGradient = 0.f;
+            for (int i = 0; i < 4; ++i) {
+                const float g = vEdges_F[i].at<float>(y, x);
+                if (g > maxGradient) {
+                    maxGradient = g;
+                    label = i + 1;
+                }
+            }
+            dst_row[x] = maxGradient;
+            label_row[x] = label;
+            distLabelColor_row[x] = vLableColor[label];
+        }
+    }
+
+    imshow("input edge mask", mask);
+    imwrite("/home/vance/output/ms/初始梯度强度.png", maxEdge_F);
+    imwrite("/home/vance/output/ms/初始梯度方向.png", distLabelColor);
+    normalize(maxEdge_F, maxEdge_F, 0, 2, NORM_MINMAX); // 归一化
+    threshold(maxEdge_F, maxEdge_F, 1, 1, THRESH_TRUNC); // 截断
+    imshow("初始梯度强度(截断)", maxEdge_F);
+    imshow("初始梯度方向", distLabelColor);
+//    threshold(maxEdge_F, maxEdge_F, 0.1, 0, THRESH_TOZERO); // 截断
+
+    // 过滤梯度, 更新label
+    Mat finalEdge = maxEdge_F.clone();
+    for (int y = 0; y < srcScaled.rows; ++y) {
+        float* edge_row = finalEdge.ptr<float>(y);
+        char* label_row = dstLabel.ptr<char>(y);
+        Point3_<uchar>* distLabelColor_row = distLabelColor.ptr<Point3_<uchar>>(y);
+        for (int x = 0; x < srcScaled.cols; ++x) {
+            if (mask.at<uchar>(y*invScale, x*invScale) == 0) {
+                edge_row[x] = 0;
+                label_row[x] = 0;
+                distLabelColor_row[x] = vLableColor[0];
+            }
+//            if (edge_row[x] < 0.1) {
+//                edge_row[x] = 0;
+//                label_row[x] = 0;
+//                distLabelColor_row[x] = vLableColor[0];
+//            }
+        }
+    }
+
+
+//    threshold(finalEdge, finalEdge, 0, 255, THRESH_BINARY);
+    normalize(finalEdge, finalEdge, 0, 255, NORM_MINMAX);
+    imwrite("/home/vance/output/ms/过滤梯度强度.png", finalEdge);
+    imwrite("/home/vance/output/ms/过滤梯度方向.png", distLabelColor);
+    imshow("过滤梯度强度", finalEdge);
+    imshow("过滤梯度方向", distLabelColor);
+    waitKey(10);
+
+    // 应用边缘滤波
+    Mat toShow = src.clone();
+
+    vector<Mat> srcChannels(3), dstChanels(3);
+    split(src, srcChannels);
+    dstChanels = srcChannels;
+
+    for (int y = 0; y < src.rows; ++y) {
+        const int y_scaled = cvRound(y * scale);
+        if (y_scaled >= dstLabel.rows)
+            continue;
+
+        const char* label_row = dstLabel.ptr<char>(y_scaled);
+        for (int x = 0; x < src.cols; ++x) {
+            const int x_scaled = cvRound(x * scale);
+            if (x_scaled >= dstLabel.cols)
+                continue;
+
+            if (label_row[x_scaled] != 0) {
+                applyEdgeFilter(dstChanels[0], x, y, label_row[x_scaled], toShow);
+                applyEdgeFilter(dstChanels[1], x, y, label_row[x_scaled], toShow);
+                applyEdgeFilter(dstChanels[2], x, y, label_row[x_scaled], toShow);
+//                circle(toShow, Point(x, y), 1, Scalar(0,255,0), 1, -1);
+            }
+        }
+    }
+
+    merge(dstChanels, dst);
+#else
+    for (int y = 0; y < srcScaled.rows; ++y) {
+        float* dst_row = maxEdge_F.ptr<float>(y);
+        char* label_row = dstLabel.ptr<char>(y);
+
+        for (int x = 0; x < srcScaled.cols; ++x) {
+            int label = 0;
+            float maxGradient = 0.f;
+            for (int i = 0; i < 4; ++i) {
+                const float g = vEdges_F[i].at<float>(y, x);
+                if (g > maxGradient) {
+                    maxGradient = g;
+                    label = i + 1;
+                }
+            }
+            dst_row[x] = maxGradient;
+            label_row[x] = label;
+        }
+    }
+    normalize(maxEdge_F, maxEdge_F, 0, 2, NORM_MINMAX); // 归一化
+    threshold(maxEdge_F, maxEdge_F, 1, 1, THRESH_TRUNC); // 截断
+
+    // 过滤梯度, 更新label
+    Mat finalEdge = maxEdge_F.clone();
+    for (int y = 0; y < srcScaled.rows; ++y) {
+        float* edge_row = finalEdge.ptr<float>(y);
+        char* label_row = dstLabel.ptr<char>(y);
+        for (int x = 0; x < srcScaled.cols; ++x) {
+            if (mask.at<uchar>(y*invScale, x*invScale) == 0) {
+                edge_row[x] = 0;
+                label_row[x] = 0;
+            }
+        }
+    }
+//    threshold(finalEdge, finalEdge, 0, 255, THRESH_BINARY);
+    normalize(finalEdge, finalEdge, 0, 255, NORM_MINMAX);
+
+#if SMOOTH_UPLOARD
+//    Mat edgeOrigSize;
+//    resize(finalEdge, edgeOrigSize, Size(), invScale, invScale);
+//    imshow("finalEdge scaled", finalEdge);
+//    erode(edgeOrigSize, edgeOrigSize, Mat(), Point(-1,-1), 2);
+//    imshow("edgeOrigSize", edgeOrigSize);
+//    waitKey(0);
+#endif
+
+    // 应用边缘滤波
+    vector<Mat> srcChannels(3), dstChanels(3);
+    split(src, srcChannels);
+    dstChanels = srcChannels;
+
+    for (int y = 0; y < src.rows; ++y) {
+        const int y_scaled = cvRound(y * scale);
+        if (y_scaled >= dstLabel.rows)
+            continue;
+
+        const char* label_row = dstLabel.ptr<char>(y_scaled);
+        for (int x = 0; x < src.cols; ++x) {
+            const int x_scaled = cvRound(x * scale);
+            if (x_scaled >= dstLabel.cols)
+                continue;
+
+            if (label_row[x_scaled] != 0) {
+                applyEdgeFilter(dstChanels[0], x, y, label_row[x_scaled]);
+                applyEdgeFilter(dstChanels[1], x, y, label_row[x_scaled]);
+                applyEdgeFilter(dstChanels[2], x, y, label_row[x_scaled]);
+            }
+        }
+    }
+
+    merge(dstChanels, dst);
+#endif
+
+#if ENABLE_DEBUG && ENABLE_DEBUG_EDGE_FILTER
+    imshow("src", src);
+    imshow("dst", dst);
+    imshow("points to smooth", toShow);
+//    waitKey(0);
+#endif
+}
 
 }  // namespace ms

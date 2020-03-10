@@ -85,6 +85,9 @@ float getPixelValue(const cv::Mat& img, float x, float y);
 //导向滤波器
 cv::Mat guidedFilter(const cv::Mat& src, int radius, double eps);
 
+// 边缘滤波
+void overlappedEdgesSmoothing(const cv::Mat& src, const cv::Mat& mask, cv::Mat& dst, double scale = 0.5);
+
 }  // namespace ms
 
 #endif  // UTILITY_HPP

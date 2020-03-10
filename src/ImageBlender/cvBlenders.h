@@ -86,9 +86,13 @@ public:
      */
     virtual void blend(CV_IN_OUT InputOutputArray dst, CV_IN_OUT InputOutputArray dst_mask);
 
+    virtual cv::Mat getOverlappedEdgesMask(int size = 0) const { return overlapped_edges_mask_; }
+
 protected:
     UMat dst_, dst_mask_;
     Rect dst_roi_;
+
+    Mat overlapped_edges_mask_;
 };
 
 /**
@@ -117,6 +121,8 @@ public:
     //! Final image can be obtained by simple weighting of the source images.
     Rect createWeightMaps(const std::vector<UMat>& masks, const std::vector<Point>& corners,
                           CV_IN_OUT std::vector<UMat>& weight_maps);
+
+    cv::Mat getOverlappedEdgesMask(int size = 0) const override;
 
 private:
     float sharpness_;
