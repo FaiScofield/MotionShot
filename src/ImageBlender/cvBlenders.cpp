@@ -43,10 +43,10 @@
 //#include "precomp.hpp"
 //#include "opencl_kernels_stitching.hpp"
 
-#include "utility.h"
 #include "cvBlenders.h"
-#include <opencv2/imgproc.hpp>
+#include "utility.h"
 #include <iostream>
+#include <opencv2/imgproc.hpp>
 
 #define ENABLE_DEBUG_RESULT 1
 #if ENABLE_DEBUG_RESULT
@@ -129,7 +129,7 @@ void cvBlender::blend(InputOutputArray dst, InputOutputArray dst_mask)
     dst_mask_.release();
 }
 
-cvFeatherBlender::cvFeatherBlender(float sharpness, bool cover): enable_cover_(cover)
+cvFeatherBlender::cvFeatherBlender(float sharpness, bool cover) : enable_cover_(cover)
 {
     if (cover)
         sharpness_ = 1.0;
@@ -147,26 +147,42 @@ void cvFeatherBlender::prepare(Rect dst_roi)
 
 void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
 {
-#define ENABLE_DEBUG_RESULT_FEATHER_FEED1    0
+#define ENABLE_DEBUG_RESULT_FEATHER_FEED1 0
 
     Mat img = _img.getMat();
     Mat dst = dst_.getMat(ACCESS_RW);
 
     assert(img.type() == CV_16SC3);
-    assert(mask.type() == CV_8U);
+    assert(mask.type() == CV_8UC1);
 
-    if (enable_cover_) {
-//        UMat weight;
-        mask.getUMat().convertTo(weight_map_, CV_32F, 1./255.);
-//        multiply(weight, sharpness_, weight_map_);
-//        threshold(weight_map_, weight_map_, 1.f, 1.f, THRESH_TRUNC);
-    } else {
+    // 1.为输入的掩模分析权重
+    if (enable_cover_) {  // 覆盖模式下输入的掩模已经自带权重
+        mask.getUMat().convertTo(weight_map_, CV_32F, 1. / 255.);
+    } else {  // 普通情况下权重从中心区域到边缘递减(@ref distanceTransform())
         createWeightMap(mask, sharpness_, weight_map_);
     }
 
-    Mat weight_map = weight_map_.getMat(ACCESS_READ);
-    Mat dst_weight_map = dst_weight_map_.getMat(ACCESS_RW);
-    Mat o1 = dst_weight_map.clone();
+    Mat weight_map = weight_map_.getMat(ACCESS_READ);        // 32F
+    Mat dst_weight_map = dst_weight_map_.getMat(ACCESS_RW);  // 32F
+
+    // 2.计算重叠区域的边缘掩模
+    if (enable_cover_) {
+        Mat srcMask, dstMask;
+        srcMask = mask.getMat();
+        dst_weight_map.convertTo(dstMask, CV_8UC1);
+
+        Mat overlappedArea, ignoreArea, edge;
+        bitwise_and(dstMask, 255, overlappedArea, srcMask);         // 得到重叠区域
+        morphologyEx(overlappedArea, edge, MORPH_GRADIENT, Mat());  // 得到重叠区域边缘
+
+        const Mat kernel = getStructuringElement(MORPH_RECT, Size(5, 5));
+        morphologyEx(srcMask, ignoreArea, MORPH_ERODE, kernel);  // 被覆盖的边缘需要消除
+        bitwise_and(edge, 0, edge, ignoreArea);
+        imshow("重叠区域边缘(考虑覆盖)", edge);
+
+        overlapped_edges_mask_ += edge;
+        // threshold(overlapped_edges_mask_, overlapped_edges_mask_, 255, 255, THRESH_TRUNC);
+    }
 
     int dx = tl.x - dst_roi_.x;
     int dy = tl.y - dst_roi_.y;
@@ -184,7 +200,7 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
 //    imshow("foreground input", foreInput);
 #endif
 
-    // 当前图像的像素乘上对应权重加到输出图像上, 并记录每个pixel对应的总权重和
+    // 3.当前图像的像素乘上对应权重加到输出图像上, 并记录每个pixel对应的总权重和
     for (int y = 0; y < img.rows; ++y) {
         const Point3_<short>* src_row = img.ptr<Point3_<short>>(y);
         Point3_<short>* dst_row = dst.ptr<Point3_<short>>(dy + y);
@@ -200,8 +216,8 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
                     dst_row[dx + x].z = static_cast<short>(src_row[x].z * weight_row[x]);
                     dst_weight_row[dx + x] = weight_row[x];
                 } else if (dst_weight_row[dx + x] == 1.f) {
-//                    cout << weight_row[dx + x] << ", ";
-                    // 待添加区域已经有前景则不添加
+                    //                    cout << weight_row[dx + x] << ", ";
+                    // 待添加区域已经有精确前景则不添加
                 } else {
                     dst_row[dx + x].x += static_cast<short>(src_row[x].x * weight_row[x]);
                     dst_row[dx + x].y += static_cast<short>(src_row[x].y * weight_row[x]);
@@ -217,22 +233,6 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
         }
     }
 
-    // 计算重叠区域的边缘掩模
-    Mat o2 = mask.getMat().clone();
-    o1.convertTo(o1, CV_32FC1, 1.f/255.f);
-    o2.convertTo(o2, CV_32FC1, 1.f/255.f);
-    Mat overlapped = o1 + o2;
-    compare(overlapped, 1.f, overlapped, CMP_GT);
-
-    Mat edge, ignoreArea;
-    morphologyEx(overlapped, edge, MORPH_GRADIENT, Mat());  // 重叠区域边缘
-    const Mat kernel = getStructuringElement(MORPH_ELLIPSE, Size(7,7));
-    morphologyEx(mask, ignoreArea, MORPH_ERODE, Mat(), kernel, 1);   // 考虑前景覆盖
-    bitwise_and(edge, 0, edge, ignoreArea);
-//    imshow("重叠区域边缘(考虑覆盖)", edge);
-
-    overlapped_edges_mask_ += edge;
-    threshold(overlapped_edges_mask_, overlapped_edges_mask_, 255, 255, THRESH_TRUNC);
 
 #if ENABLE_DEBUG_RESULT_FEATHER_FEED1 && ENABLE_DEBUG_RESULT
     imshow("tatal edge", overlapped_edges_mask_);
@@ -241,16 +241,16 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
     findContours(overlapped, contours, RETR_LIST, CHAIN_APPROX_SIMPLE);
 
     dst.convertTo(disU, CV_8U);
-    drawContours(disU, contours, -1, Scalar(0,255,0), 2);
+    drawContours(disU, contours, -1, Scalar(0, 255, 0), 2);
     imshow("dst after feed & overlapped area(green)", disU);
     imshow("dst_weight_map_ after feed", dst_weight_map_);
     waitKey(0);
 #endif
 }
 
-void cvFeatherBlender::feed(const vector<Mat> &vImgs, const vector<Mat> &vMasks, const vector<Point> &vTopleftCorners)
+void cvFeatherBlender::feed(const vector<Mat>& vImgs, const vector<Mat>& vMasks, const vector<Point>& vTopleftCorners)
 {
-#define ENABLE_DEBUG_RESULT_FEATHER_FEED2    0
+#define ENABLE_DEBUG_RESULT_FEATHER_FEED2 0
 
     //! TODO . 开启强覆盖功能.
     //! 在重叠区域设置调整强覆盖区域的权重, 使在时序上后面的高权前景部分覆盖前面的前景.
@@ -292,7 +292,7 @@ void cvFeatherBlender::feed(const vector<Mat> &vImgs, const vector<Mat> &vMasks,
             assert(src_row != nullptr && dst_row != nullptr && weight_row != nullptr && dst_weight_row != nullptr);
 
             for (int x = 0; x < image.cols; ++x) {
-                if (enable_cover_) { // 时序后覆盖前
+                if (enable_cover_) {                         // 时序后覆盖前
                     if (abs(1.f - weight_row[x]) < 1e-6f) {  // 权值为1, 直接覆盖
                         dst_row[dx + x].x = static_cast<short>(src_row[x].x * weight_row[x]);
                         dst_row[dx + x].y = static_cast<short>(src_row[x].y * weight_row[x]);
@@ -314,18 +314,17 @@ void cvFeatherBlender::feed(const vector<Mat> &vImgs, const vector<Mat> &vMasks,
         }
 
 #if ENABLE_DEBUG_RESULT_FEATHER_FEED2 && ENABLE_DEBUG_RESULT
-    dst.convertTo(disU, CV_8U);
-    imshow("dst after feed", disU);
-    imshow("dst_weight_map_ after feed", dst_weight_map_);
-    waitKey(0);
+        dst.convertTo(disU, CV_8U);
+        imshow("dst after feed", disU);
+        imshow("dst_weight_map_ after feed", dst_weight_map_);
+        waitKey(0);
 #endif
-
     }
 }
 
 void cvFeatherBlender::blend(InputOutputArray dst, InputOutputArray dst_mask)
 {
-#define ENABLE_DEBUG_RESULT_FEATHER_BLEND   0
+#define ENABLE_DEBUG_RESULT_FEATHER_BLEND 0
 
 #if ENABLE_DEBUG_RESULT_FEATHER_BLEND && ENABLE_DEBUG_RESULT
     Mat tmp;
@@ -352,7 +351,7 @@ void cvFeatherBlender::blend(InputOutputArray dst, InputOutputArray dst_mask)
 
 
 Rect cvFeatherBlender::createWeightMaps(const std::vector<UMat>& masks,
-                                      const std::vector<Point>& corners, std::vector<UMat>& weight_maps)
+                                        const std::vector<Point>& corners, std::vector<UMat>& weight_maps)
 {
     weight_maps.resize(masks.size());
     for (size_t i = 0; i < masks.size(); ++i)
@@ -384,9 +383,10 @@ Mat cvFeatherBlender::getOverlappedEdgesMask(int size) const
 {
     Mat res;
 
+    threshold(overlapped_edges_mask_, overlapped_edges_mask_, 255, 255, THRESH_TRUNC);
     if (size > 1) {
         const Mat kernel = getStructuringElement(MORPH_RECT, Size(size, size));
-        dilate(overlapped_edges_mask_, res, kernel);
+        dilate(overlapped_edges_mask_, res, kernel);  // 膨胀
     } else {
         res = overlapped_edges_mask_.clone();
     }
@@ -483,7 +483,7 @@ void cvMultiBandBlender::feed(InputArray _img, InputArray mask, Point tl)
 
     // Create the source image Laplacian pyramid
     UMat img_with_border;
-    copyMakeBorder(_img, img_with_border, top, bottom, left, right, BORDER_REFLECT); // 生成添加了边界的图像
+    copyMakeBorder(_img, img_with_border, top, bottom, left, right, BORDER_REFLECT);  // 生成添加了边界的图像
 
     std::vector<UMat> src_pyr_laplace;
     createLaplacePyr(img_with_border, num_bands_, src_pyr_laplace);
@@ -494,7 +494,7 @@ void cvMultiBandBlender::feed(InputArray _img, InputArray mask, Point tl)
 
     if (weight_type_ == CV_32F) {
         mask.getUMat().convertTo(weight_map, CV_32F, 1. / 255.);
-    } else { // weight_type_ == CV_16S
+    } else {  // weight_type_ == CV_16S
         mask.getUMat().convertTo(weight_map, CV_16S);
         UMat add_mask;
         compare(mask, 0, add_mask, CMP_NE);
@@ -534,7 +534,7 @@ void cvMultiBandBlender::feed(InputArray _img, InputArray mask, Point tl)
                     dst_weight_row[x] += weight_row[x];
                 }
             }
-        } else { // weight_type_ == CV_16S
+        } else {  // weight_type_ == CV_16S
             for (int y = 0; y < y_br - y_tl; ++y) {
                 const Point3_<short>* src_row = _src_pyr_laplace.ptr<Point3_<short>>(y);
                 Point3_<short>* dst_row = _dst_pyr_laplace.ptr<Point3_<short>>(y);
@@ -623,7 +623,6 @@ void normalizeUsingWeightMap(InputArray _weight, InputOutputArray _src)
             }
         }
     }
-
 }
 
 
@@ -631,33 +630,33 @@ void createWeightMap(InputArray mask, float sharpness, InputOutputArray weight)
 {
     assert(mask.type() == CV_8U);
 
-    distanceTransform(mask, weight, DIST_L1, 3); // CV_32F
+    distanceTransform(mask, weight, DIST_L1, 3);  // CV_32F
 
-//#if ENABLE_DEBUG_RESULT
-//    Mat w, wu;
+    //#if ENABLE_DEBUG_RESULT
+    //    Mat w, wu;
 
-//    //cout << "weight type:" << weight.getMat().type() << endl;
-//    weight.getMat().convertTo(wu, CV_8UC1, 255);
-//    hconcat(mask, wu, w);
-//    imshow("mask & weight", w);
-//#endif
+    //    //cout << "weight type:" << weight.getMat().type() << endl;
+    //    weight.getMat().convertTo(wu, CV_8UC1, 255);
+    //    hconcat(mask, wu, w);
+    //    imshow("mask & weight", w);
+    //#endif
 
     UMat tmp;
     multiply(weight, sharpness, tmp);
     threshold(tmp, weight, 1.f, 1.f, THRESH_TRUNC);
 
-//#if ENABLE_DEBUG_RESULT
-//    //cout << "tmp type:" << tmp.type() << endl;
-//    //cout << "weight type:" << weight.type() << endl;
+    //#if ENABLE_DEBUG_RESULT
+    //    //cout << "tmp type:" << tmp.type() << endl;
+    //    //cout << "weight type:" << weight.type() << endl;
 
-//    Mat tmp1, tmp2;
+    //    Mat tmp1, tmp2;
 
-//    normalize(weight, tmp1, 0, 255, NORM_MINMAX);
-//    Mat w2;
-//    hconcat(tmp, tmp1, w2);
-//    imshow("weight * sharpness & threshold weight", w2) ;
-//    waitKey(0);
-//#endif
+    //    normalize(weight, tmp1, 0, 255, NORM_MINMAX);
+    //    Mat w2;
+    //    hconcat(tmp, tmp1, w2);
+    //    imshow("weight * sharpness & threshold weight", w2) ;
+    //    waitKey(0);
+    //#endif
 }
 
 

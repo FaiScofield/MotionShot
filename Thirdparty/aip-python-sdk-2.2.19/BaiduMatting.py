@@ -45,20 +45,26 @@ SECRET_KEY = 'sx8w8l1dzlD2Gt0QAKgZxItRB3uE8DZz'
 client = AipBodyAnalysis(APP_ID, API_KEY, SECRET_KEY)
 
 
-src_dir = '/home/vance/dataset/rk/Phone/withGT/omj8/image_rect_small'
+src_dir = '/home/vance/dataset/rk/Phone/withGT2/girl-run-c-8/image_rect'
+#output_dir = '/home/vance/dataset/rk/Phone/withGT2/girl-walk-sj-7/gt_rect_baidu'
 images = os.listdir(src_dir)
 
+#img_index = 1
 for file_name in images:
     if '.png' in file_name and '_image' not in file_name:
-        #    if '.jpg' in file_name and '_image' not in file_name:
+#    if '.jpg' in file_name and '_image' not in file_name:
 
         file_name = os.path.join(src_dir, file_name)
         print("dealing with " + file_name)
 #        mask        = mattingApi(file_name, client)
         mask, foreground = mattingApi(file_name, client)
 
-        image_name = file_name + '_image.jpg'
-        label_name = file_name + '_label.png'
+#        image_name = output_dir + '_image.jpg'
+#        label_name = output_dir + '/%d.png' % img_index
+#        fore_name = output_dir + '/%d_fore.jpg' % img_index
+#        img_index = img_index + 1
+
+        label_name = file_name + '_mask.png'
         fore_name = file_name + '_fore.jpg'
 
 #        shutil.move(os.path.join(src_dir, file_name), os.path.join(src_dir, image_name))

@@ -12,7 +12,7 @@ namespace ms
 #define INFO(msg) (std::cout << "[INFO ] " << msg << std::endl)
 #define TIMER(msg) (std::cout << "\033[32m[TIMER] " << msg << "\033[0m" << std::endl)
 #define WARNING(msg) (std::cerr << "\033[33m[WARNI] " << msg << "\033[0m" << std::endl)
-#define ERROR(msg) (std::cerr << "\033[31m[ERROR] " << msg << "\033[0m" << std::endl)
+#define ERROR(msg) (std::cerr << "\033[31m[ERROR] " << msg << "\033[0m (in file " << __FILE__ << ", in line " << __LINE__ << std::endl)
 
 enum InputType {
     VIDEO       = 0,  // 视频序列
@@ -27,6 +27,8 @@ enum InputType {
 //    DILATE  = 1,    // 往外创建过渡区域
 //    BOTH    = 2     // 往两个方向都创建过渡区域
 //};
+
+void namedLargeWindow(const std::string& title, bool flag = true);
 
 void ReadImageNamesFromFolder(const std::string& folder, std::vector<std::string>& names);
 

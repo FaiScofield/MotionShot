@@ -11,7 +11,7 @@
 #include "ImageBlender/cvSeamlessCloning_func.hpp"
 
 
-#define GET_GROUNDTRUTH_FROM_BAIDU      0
+#define GET_GROUNDTRUTH_FROM_BAIDU      1
 #define GET_GROUNDTRUTH_FROM_FACEPP     0
 
 using namespace std;
@@ -19,6 +19,10 @@ using namespace cv;
 using namespace ms;
 
 enum BlenderType { NO, FEATHER, MULTI_BAND };
+
+bool IS_LARGE_IMAGE_SIZE = true;
+
+
 
 int main(int argc, char* argv[])
 {
@@ -29,7 +33,7 @@ int main(int argc, char* argv[])
                "{blender    b|feather|valid blend type: \"feather\", \"multiband\", \"poission\"}"
                "{scale      c|0.5|scale of inpute image}"
                "{begin      a|1|start index for image sequence}"
-               "{end        e|8|end index for image sequence}"
+               "{end        e|7|end index for image sequence}"
                "{help       h|false|show help message}");
 
     if (parser.get<bool>("help")) {
@@ -75,7 +79,7 @@ int main(int argc, char* argv[])
     // 1.1读取原图
     vector<Mat> vImages, vGTsColor, vGTsGray, vForegroundMasks;
     ReadImageSequence(str_folder, "jpg", vImages, beginIdx, endIdx - beginIdx + 1);  // 1 ~ 12
-    resizeFlipRotateImages(vImages, 0.5);  //! 注意rect掩模是在原图缩小0.5倍后获得的
+//    resizeFlipRotateImages(vImages, 0.5);  //! 注意部分rect掩模是在原图缩小0.5倍后获得的
     const int N = vImages.size();
 
     // 1.2读取前景掩模
@@ -84,7 +88,7 @@ int main(int argc, char* argv[])
         //! 注意通过NN得到的掩模可能非唯一/边界不完整/存在小孔洞, 需要过滤/膨胀处理
         vector<Mat> vGTsMaskRect;
         vector<Rect> vGTsRect;
-        const string gtFolder = str_folder + "/../gt_rect_small_baidu/";
+        const string gtFolder = str_folder + "/../gt_rect_baidu/";
         ReadGroundtruthRectFromFolder(gtFolder, "png", vGTsMaskRect, vGTsRect, beginIdx, endIdx - beginIdx + 1);
         assert(vGTsMaskRect.size() == vGTsRect.size());
 
@@ -96,12 +100,12 @@ int main(int argc, char* argv[])
             vector<vector<Point>> contours;
             findContours(gtGray, contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
 
+#define SHOW_MASK_INPUT 0
+#if     SHOW_MASK_INPUT
             Mat toShow;
             cvtColor(gtGray, toShow, COLOR_GRAY2BGR);
             drawContours(toShow, contours, -1, Scalar(0,255,0));
-            imshow("mask input & contours", toShow);
-            waitKey(300);
-
+#endif
             if (contours.size() > 1) {
                 int maxIdx = 0, maxArea = 0;
                 for (int j = 0, jend = contours.size(); j < jend; ++j) {
@@ -114,10 +118,12 @@ int main(int argc, char* argv[])
                 gtGray = Mat::zeros(gtGray.size(), CV_8UC1);
                 drawContours(gtGray, contours, maxIdx, Scalar(255), -1);
 
-//                rectangle(toShow, boundingRect(contours[maxIdx]), Scalar(0,0,255), 2);
-//                imshow("mask & max rect", toShow);
-//                imshow("final input mask", gtGray);
-//                waitKey(0);
+#if     SHOW_MASK_INPUT
+                rectangle(toShow, boundingRect(contours[maxIdx]), Scalar(0,0,255), 2);
+                namedLargeWindow("前景掩模&轮廓");
+                imshow("前景掩模&轮廓", toShow);
+                waitKey(500);
+#endif
             }
             vGTsGray.push_back(gtGray);
         }
@@ -175,8 +181,11 @@ int main(int argc, char* argv[])
         if (vImages.empty() || vGTsGray.empty())
             exit(-1);
 
-        assert(N > 3);
+        assert(N > 2);
         assert(vImages.size() == vGTsGray.size());
+        assert(vImages[0].size() == vGTsGray[0].size());
+        if (vImages[0].cols > 1600 || vImages[0].rows > 1200)
+            IS_LARGE_IMAGE_SIZE = true;
     }
     destroyAllWindows();
 
@@ -186,252 +195,147 @@ int main(int argc, char* argv[])
     const Mat kernel3 = getStructuringElement(MORPH_ELLIPSE, Size(9, 9));
     vForegroundMasks.reserve(N);
     for (int i = 0; i < N; ++i) {
-        Mat mask, maskBin, tmpMask1, tmpMask2, tmpMask3;
+        Mat mask, maskScaled, tmpMask;
         mask = vGTsGray[i].clone();
-
-        Mat show1, show2, show3;
-        tmpMask1 = mask.clone();   // 形态学操作前
-        bitwise_and(vImages[i], 255, show1, tmpMask1);
+        tmpMask = mask.clone();   // 形态学操作前
 
         compare(mask, 0, mask, CMP_GT);
         morphologyEx(mask, mask, MORPH_OPEN, kernel1, Point(-1,-1), 1);  // 开操作(先腐蚀再膨胀),平滑边界, 去噪点
         morphologyEx(mask, mask, MORPH_CLOSE, kernel2, Point(-1,-1), 1); // 去孔洞
         morphologyEx(mask, mask, MORPH_OPEN, kernel3, Point(-1,-1), 1);  // 平滑边界
 #if GET_GROUNDTRUTH_FROM_BAIDU
-        smoothMaskWeightEdge(mask, mask, 3, 0);
+        smoothMaskWeightEdge(mask, mask, 5, 0);
 #elif GET_GROUNDTRUTH_FROM_FACEPP
 //        morphologyEx(mask, mask, MORPH_DILATE, kernel1, Point(-1,-1), 1);
 //        mask.setTo(255, mask);
         smoothMaskWeightEdge(mask, mask, 5, 0);
 #endif
+//        resize(mask, maskScaled, Size(), 2, 2);
+//        vForegroundMasks.push_back(maskScaled);
         vForegroundMasks.push_back(mask);
 
 #define SHOW_MASK_PREPROCESS_RESULT 0
 #if     SHOW_MASK_PREPROCESS_RESULT
-        bitwise_and(vImages[i], 255, show2, mask);
-        imshow("前景掩模原始输入", show1);
-        imshow("前景掩模平滑后", show2);
+        Rect maskRect = boundingRect(mask);
+        imshow("前景掩模原始输入", tmpMask(maskRect));
+        imshow("前景掩模平滑后", mask(maskRect));
         string txt1 = "/home/vance/output/ms/" + to_string(i+1) + "前景掩模原始.jpg";
         string txt2 = "/home/vance/output/ms/" + to_string(i+1) + "前景掩模平滑.jpg";
-        imwrite(txt1, show1);
-        imwrite(txt2, show2);
-
-        waitKey(500);
+        imwrite(txt1, tmpMask(maskRect));
+        imwrite(txt2, mask(maskRect));
+        waitKey(1000);
 #endif
     }
-    destroyAllWindows();
-//    exit(0);
-
-
-#define DEBUG_BLEND_SINGLE_FOREGROUND   0
-    {
-#if     DEBUG_BLEND_SINGLE_FOREGROUND
-    ms::cvMultiBandBlender* blender1 = new ms::cvMultiBandBlender();
-    ms::cvFeatherBlender* blender2 = new ms::cvFeatherBlender(0.1, false);
-    ms::cvSeamlessCloning* blender3 = new ms::cvSeamlessCloning();
-
-    Mat pano = vImages.front().clone(), panoS;
-    pano.convertTo(panoS, CV_16SC3);
-    const Rect dstROI(0, 0, pano.cols, pano.rows);
-
-    for (int i = 1; i < N; ++i) {
-        Mat foreground, backgroundMask;
-        vImages[i].copyTo(foreground, vForegroundMasks[i]);
-        Rect foreRectPosition = boundingRect(vForegroundMasks[i]);
-        bitwise_not(vForegroundMasks[i], backgroundMask);
-
-        Mat frameS, blendResult1, blendResult2, blendResult3, blendMask1, blendMask2;
-        vImages[i].convertTo(frameS, CV_16SC3);
-
-//        Mat panoWithForeInner, foreMaskEdge, foreMaskInner, backMaskInner;
-//        erode(vForegroundMasks[i], foreMaskInner, kernel2);
-//        foreMaskEdge = vForegroundMasks[i] - foreMaskInner;
-//        bitwise_not(foreMaskEdge, backMaskInner);
-//        panoWithForeInner = pano.clone();
-//        vImages[i].copyTo(panoWithForeInner, foreMaskInner);
-//        panoWithForeInner.convertTo(panoWithForeInner, CV_16SC3);
-//        imshow("panoWithForeInner", panoWithForeInner);
-
-        // test blending
-        blender1->prepare(dstROI);
-        blender1->feed(frameS(foreRectPosition), vForegroundMasks[i](foreRectPosition), foreRectPosition.tl());
-        blender1->feed(panoS, backgroundMask, Point(0, 0));
-//        blender1->feed(frameS(foreRectPosition), foreMaskEdge, foreRectPosition.tl());
-//        blender1->feed(panoWithForeInner, backMaskInner, Point(0, 0));
-        blender1->blend(blendResult1, blendMask1);
-        blendResult1.convertTo(blendResult1, CV_8UC3);
-
-        Mat foreMaskForFeather;
-        smoothMaskWeightEdge(vForegroundMasks[i](foreRectPosition), foreMaskForFeather, 16);
-        blender2->prepare(dstROI);
-        blender2->feed(frameS(foreRectPosition), foreMaskForFeather, foreRectPosition.tl());
-        blender2->feed(panoS, backgroundMask, Point(0, 0));
-        blender2->blend(blendResult2, blendMask2);
-        blendResult2.convertTo(blendResult2, CV_8UC3);
-
-        const Mat kernel3 = getStructuringElement(MORPH_CROSS, Size(15, 15));
-        Mat foreMaskForSeamlessClone;
-        dilate(vForegroundMasks[i], foreMaskForSeamlessClone, kernel3);
-        Point2f center = (foreRectPosition.tl() + foreRectPosition.br()) * 0.5;
-        cvSeamlessClone(vImages[i], pano, foreMaskForSeamlessClone, center, blendResult3, NORMAL_CLONE);
-//        blender2->normalClone(pano, vImages[i], vForegroundMasks[i], panoMaskToClone, blendResult2, NORMAL_CLONE);
-
-        const string txt1 = "/home/vance/output/ms/第" + to_string(i) + "帧单个前景融合-多频段.jpg";
-        const string txt2 = "/home/vance/output/ms/第" + to_string(i) + "帧单个前景融合-羽化.jpg";
-        const string txt3 = "/home/vance/output/ms/第" + to_string(i) + "帧单个前景融合-泊松.jpg";
-        imwrite(txt1, blendResult1);
-        imwrite(txt2, blendResult2);
-        imwrite(txt3, blendResult3);
-        imshow("blendResult1(multiband)", blendResult1);
-        imshow("blendResult2(feather)", blendResult2);
-        imshow("blendResult2(poisson)", blendResult3);
-        waitKey(30);
-    }
-
-    exit(0);
-
-#endif
-    }
-
-    /// calc the result in different gaps
-    vector<Mat> vImgsToProcess = vImages;
-//    vector<int> vIdxToProcess{0, 1, 2, 3, 4, 5, 6, 7, 8};
-//    vector<vector<int>> vvIdxPerIter;
-//    vvIdxPerIter.emplace_back(vector<int>{0, 1, 3, 4, 6, 7});  // 6
-//    vvIdxPerIter.emplace_back(vector<int>{0, 1, 2, 3, 4, 5, 6, 7, 8});   // 9
-
-    vector<int> vIdxToProcess{0, 1, 2, 3, 4, 5, 6, 7};
-    vector<vector<int>> vvIdxPerIter;
-    vvIdxPerIter.emplace_back(vector<int>{0, 1, 2, 3, 4, 5, 6, 7});
 
     timer.stop();
     TIMER("1.系统初始化耗时(s): " << timer.getTimeSec());
     double t1, t2, t3;
 
-    const Mat kernelX = getStructuringElement(MORPH_ELLIPSE, Size(20, 20));
+    destroyAllWindows();
+//    exit(0);
+    timer.start();
 
-    /// main loop
-    for (int k = 0; k < vvIdxPerIter.size(); ++k) {
-        timer.start();
+    // 2.前景拼接融合
+    const Mat pano = vImages.front().clone();
+    const Rect disRoi(0, 0, pano.cols, pano.rows);
 
-        // 2.前景拼接融合
-        const vector<int>& vIdxThisIter = vvIdxPerIter[k];
-        const Mat pano = vImgsToProcess.front().clone();
-        const Rect disRoi(0, 0, pano.cols, pano.rows);
+    blender->prepare(disRoi);
+    for (int i = 0; i < N; ++i) {
+        const Mat& frame = vImages[i];
+        const Mat& foreMask = vForegroundMasks[i];
 
-        blender->prepare(disRoi);
-        for (size_t j = 0, jend = vIdxThisIter.size(); j < jend; ++j) {
+        // blender
+        Mat frame_S;
+        frame.convertTo(frame_S, CV_16SC3);
+        blender->feed(frame_S, foreMask, Point(0, 0));
+    }
 
-            const int& imgIdx = vIdxThisIter[j];
-            const Mat& frame = vImages[imgIdx];
-            const Mat& foreMask = vForegroundMasks[imgIdx];
-            Mat foreMaskSmooth = foreMask;
+    Mat allForeground, allForeground_S, allForegroundMask;
+    blender->blend(allForeground_S, allForegroundMask);
+    allForeground_S.convertTo(allForeground, CV_8UC3);
+    const Mat overlappedEdges = blender->getOverlappedEdgesMask(0);
+    const Mat overlappedEdgesMask = blender->getOverlappedEdgesMask(10);
+    const Rect foregroundRect = boundingRect(allForegroundMask);
 
-#if !GET_GROUNDTRUTH_FROM_BAIDU && !GET_GROUNDTRUTH_FROM_FACEPP
-#define EXPAND_FOREGROUND_MASK 1
-#if EXPAND_FOREGROUND_MASK
-            // 扩大前景的掩模, 但在前景拼接时要注意处理扩大出来那部分的掩模权重
-//            smoothMaskWeightEdge(foreMask, foreMaskSmooth, 1, 2);
-            smoothMaskWeightEdge(foreMask, foreMaskSmooth, 2, 5);
-#else
-            smoothMaskWeightEdge(foreMask, foreMaskSmooth, 3);  // 过渡边缘
-#endif
-//            imshow("前景掩模过渡前", foreMask);
-//            imshow("前景掩模过渡后", foreMaskSmooth);
-//            waitKey(0);
-#endif
-            // blender
-            Mat frame_S;
-            frame.convertTo(frame_S, CV_16SC3);
-            blender->feed(frame_S, foreMaskSmooth, Point(0, 0));
-        }
+    Mat allForegroundShow = allForeground.clone();
+    vector<vector<Point>> contours;
+    findContours(allForegroundMask(foregroundRect), contours, RETR_LIST, CHAIN_APPROX_SIMPLE);
+    drawContours(allForegroundShow(foregroundRect), contours, -1, Scalar(255,0,0), 2);  // 画前景轮廓
+    allForegroundShow.setTo(Scalar(0,255,0), overlappedEdges);  // 画重叠区域轮廓
+    namedLargeWindow("所有前景轮廓(蓝)&重叠区域(绿)");
+    imshow("所有前景轮廓(蓝)&重叠区域(绿)", allForegroundShow(foregroundRect));
 
-        Mat allForeground, allForeground_S, allForegroundMask;
-        blender->blend(allForeground_S, allForegroundMask);
-        allForeground_S.convertTo(allForeground, CV_8UC3);
-        const Mat overlappedEdge = blender->getOverlappedEdgesMask(0);
-        const Mat overlappedEdgesMask = blender->getOverlappedEdgesMask(3);
-        const Rect foregroundRect = boundingRect(allForegroundMask);
+    timer.stop();
+    t1 = timer.getTimeSec();
+    TIMER("2.前景拼接融合耗时(s): " << t1);
 
-        timer.stop();
-        t1 = timer.getTimeSec();
-        TIMER("2.前景拼接融合耗时(s): " << t1);
+    string txt1 = "/home/vance/output/ms/前景拼接结果.jpg";
+    imwrite(txt1, allForeground(foregroundRect));
+    string txt2 = "/home/vance/output/ms/前景拼接轮廓与重叠区域.jpg";
+    imwrite(txt2, allForegroundShow(foregroundRect));
+    timer.start();
 
-        string txt1 = "/home/vance/output/ms/" + to_string(vIdxThisIter.size()) + "个前景拼接融合结果-" + strMode1 + ".jpg";
-        imwrite(txt1, allForeground);
-        timer.start();
+    // 3.前景拼接结果改善(边缘滤波)
+    Mat foregroundFiltered, foregroundFiltered_S;
+    overlappedEdgesSmoothing(allForeground/*(foregroundRect)*/, overlappedEdgesMask/*(foregroundRect)*/, foregroundFiltered, 0.3);
+//    bilateralFilter(allForeground, foregroundFiltered, 5, 15, 30, BORDER_CONSTANT);
+//    ximgproc::guidedFilter(I, allForeground, foregroundFiltered, 16, 0.02*255*255);
+    foregroundFiltered.convertTo(foregroundFiltered_S, CV_16SC3);
 
-        // 3.前景拼接结果改善(边缘滤波)
-        Mat allForegroundShow = allForeground.clone();
-        vector<vector<Point>> contours;
-        findContours(allForegroundMask(foregroundRect), contours, RETR_LIST, CHAIN_APPROX_SIMPLE);
-        drawContours(allForegroundShow(foregroundRect), contours, -1, Scalar(255,0,0), 2);  // 画前景轮廓
-        allForegroundShow.setTo(Scalar(0,255,0), overlappedEdge);  // 画重叠区域轮廓
-        imshow("所有前景轮廓(蓝)&重叠区域(绿)", allForegroundShow);
-        waitKey(0);
-//        continue;
+    timer.stop();
+    t2 = timer.getTimeSec();
+    TIMER("3.前景拼接结果改善(s): " << t2);
 
-        Mat foregroundFiltered, foregroundFiltered_S;
-        overlappedEdgesSmoothing(allForeground/*(foregroundRect)*/, overlappedEdgesMask/*(foregroundRect)*/, foregroundFiltered, 0.3);
-//        bilateralFilter(allForeground, foregroundFiltered, 5, 15, 30, BORDER_CONSTANT);
-//        ximgproc::guidedFilter(I, allForeground, foregroundFiltered, 16, 0.02*255*255);
-        foregroundFiltered.convertTo(foregroundFiltered_S, CV_16SC3);
+    string txt3 = "/home/vance/output/ms/前景拼接结果改善(EF).jpg";
+    imwrite(txt3, foregroundFiltered(foregroundRect));
+    timer.start();
 
-        timer.stop();
-        t2 = timer.getTimeSec();
-        TIMER("3.前景拼接结果改善(s): " << t2);
+    // 4.前背景融合. 把pano和前景对应的mask区域的稍微缩收/扩张, 设置平滑的权重过渡, 然后再融合.
+    //! 暂时不能用多频段融合.
+//   ms::cvSeamlessCloning* blender2 = new ms::cvSeamlessCloning();
+    ms::cvFeatherBlender* blender2 = new ms::cvFeatherBlender(0.1, false);
+    ms::cvFeatherBlender* blender3 = new ms::cvFeatherBlender(0.1, false);
+    const string strMode2 = "羽化";
 
-        string txt2 = "/home/vance/output/ms/" + to_string(vIdxThisIter.size()) + "个前景拼接融合结果(EF).jpg";
-        imwrite(txt2, foregroundFiltered);
-        timer.start();
+    blender2->prepare(disRoi);
+    blender3->prepare(disRoi);
 
-        // 4.前背景融合. 把pano和前景对应的mask区域的稍微缩收/扩张, 设置平滑的权重过渡, 然后再融合.
-        //! 暂时不能用多频段融合.
-//        ms::cvSeamlessCloning* blender2 = new ms::cvSeamlessCloning();
-        ms::cvFeatherBlender* blender2 = new ms::cvFeatherBlender(0.1, false);
-        const string strMode2 = "羽化";
+    Mat foregroundMaskFinal, backgroundMaskFinal, maskFinal;
+    smoothMaskWeightEdge(allForegroundMask, foregroundMaskFinal, 0);  // 过渡边缘
+    bitwise_not(foregroundMaskFinal, backgroundMaskFinal);
 
-        blender2->prepare(disRoi);
-
-        Mat foregroundMaskFinal, backgroundMaskFinal, maskFinal;
-        smoothMaskWeightEdge(allForegroundMask, foregroundMaskFinal, 0);  // 过渡边缘
-        bitwise_not(foregroundMaskFinal, backgroundMaskFinal);
-
-//        Mat fmf, fmfOut;
-//        cvtColor(foregroundMaskFinal, fmf, COLOR_GRAY2BGR);
-//        hconcat(allForeground, fmf, fmfOut);
-//        string txt3 = "/home/vance/output/前景与掩模-" + to_string(vIdxThisIter.size()) + ".jpg";
-//        imwrite(txt3, fmfOut);
-
-        Mat pano_S, result, resultMask;
-        pano.convertTo(pano_S, CV_16SC3);
-        blender2->feed(pano_S, backgroundMaskFinal, Point(0, 0));
-        blender2->feed(/*allForeground_S*/foregroundFiltered_S, foregroundMaskFinal, Point(0, 0));
-        blender2->blend(result, resultMask);
-        result.convertTo(result, CV_8UC3);
+    Mat pano_S, result1, resultMask1, result2, resultMask2;
+    pano.convertTo(pano_S, CV_16SC3);
+    blender2->feed(pano_S, backgroundMaskFinal, Point(0, 0));
+    blender2->feed(foregroundFiltered_S, foregroundMaskFinal, Point(0, 0));
+    blender2->blend(result1, resultMask1);
+    result1.convertTo(result1, CV_8UC3);
 
 //        Mat resultPoisson;
 //        Point2f center = (foreRectPosition.tl() + foreRectPosition.br()) * 0.5;
 //        cvSeamlessClone(allForeground, pano, allForegroundMask, center, resultPoisson, NORMAL_CLONE);
 //        rectangle(resultPoisson, foreRectPosition, Scalar(0,0,255));
 //        imshow("resultPoisson", resultPoisson);
-//        string txt4 = "/home/vance/output/ms/" + to_string(vIdxThisIter.size()) + "个前景最终结果-泊松.jpg";
+//        string txt4 = "/home/vance/output/ms/" + to_string(N) + "个前景最终结果-泊松.jpg";
 //        imwrite(txt4, resultPoisson);
 
-//        namedWindow("blend result", WINDOW_GUI_EXPANDED);
-//        hconcat(fmfOut, result, result);
-        imshow("blend result", result);
+//    namedLargeWindow("blend result");
+//    imshow("blend result", result);
 
-        timer.stop();
-        t3 = timer.getTimeSec();
-        TIMER("4.前背景融合耗时(s): " << t3);
-        TIMER(vIdxThisIter.size() << "个前景, 算法整体耗时(s): " << t1+t2+t3);
+    timer.stop();
+    t3 = timer.getTimeSec();
+    TIMER("4.前背景融合耗时(s): " << t3);
+    TIMER(N << "个前景, 算法整体耗时(s): " << t1+t2+t3);
 
-        string txt5 = "/home/vance/output/ms/" + to_string(vIdxThisIter.size()) + "个前景最终结果-" + strMode1 + "+" + strMode2 + ".jpg";
-        imwrite(txt5, result);
+    blender3->feed(pano_S, backgroundMaskFinal, Point(0, 0));
+    blender3->feed(allForeground_S, foregroundMaskFinal, Point(0, 0));
+    blender3->blend(result2, resultMask2);
+    result2.convertTo(result2, CV_8UC3);
 
-        waitKey(300);
-    }
+    string txt5 = "/home/vance/output/ms/最终结果.jpg";
+    imwrite(txt5, result1);
+    string txt6 = "/home/vance/output/ms/初步结果.jpg";
+    imwrite(txt6, result2);
 
     waitKey(0);
     return 0;

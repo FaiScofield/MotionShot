@@ -58,12 +58,16 @@ void GCAPP::mouseClick(int event, int x, int y, int flags, void *param)
     case EVENT_LBUTTONUP: {
         if (rectState_ == IN_PROCESS) {
             rectState_ = SET;
+            x = x >= image_.cols ? image_.cols - 1 : x;
+            y = y >= image_.rows ? image_.rows - 1 : y;
             rect_ = Rect(Point(rect_.x, rect_.y), Point(x, y));
             showImage();
         }
        break;}
     case EVENT_MOUSEMOVE: {
         if (rectState_ == IN_PROCESS) {
+            x = x >= image_.cols ? image_.cols - 1 : x;
+            y = y >= image_.rows ? image_.rows - 1 : y;
             rect_ = Rect(Point(rect_.x, rect_.y), Point(x, y));
             showImage();
         }
@@ -96,6 +100,7 @@ void GCAPP::reset()
 //    image_.release();
     rect_ = Rect();
     rectState_ = NOT_SET;
+    showImage();
 }
 
 ///////////////////////////////////////////////////////////
@@ -171,7 +176,7 @@ int main(int argc, char* argv[])
         const string winName = "image show";
         namedWindow(winName, WINDOW_AUTOSIZE);
 
-        string outConfigFile = str_output + "/" + "rect_param.txt";
+        string outConfigFile = str_output + "/rect_param.txt";
         gcapp.setOutConfigName(outConfigFile);
         gcapp.setWindowName(winName);
 
@@ -185,7 +190,10 @@ int main(int argc, char* argv[])
             gcapp.setOutImageName(outFile);
             gcapp.showImage();
 
-            if ((char)waitKey(0) == '\x1b')
+            char key = waitKey(0);
+            if (key == 'r') {
+                i--;
+            } else if (key == '\x1b')
                 exit(0);
         }
     } else {

@@ -51,7 +51,7 @@ int main(int argc, char* argv[])
     cout << " - blender = " << str_blender << endl;
 
 //    detail::Blender* blender = nullptr;
-        ms::cvBlender* blender = nullptr;
+    ms::cvBlender* blender = nullptr;
     BlenderType blenderType;
     if (str_blender == "feather") {
 //        blender = dynamic_cast<detail::Blender*>(new detail::FeatherBlender());
@@ -107,6 +107,75 @@ int main(int argc, char* argv[])
 
     timer.stop();
     TIMER("系统初始化耗时(s): " << timer.getTimeSec());
+
+    {
+#define DEBUG_BLEND_SINGLE_FOREGROUND   0
+#if     DEBUG_BLEND_SINGLE_FOREGROUND
+    ms::cvMultiBandBlender* blender1 = new ms::cvMultiBandBlender();
+    ms::cvFeatherBlender* blender2 = new ms::cvFeatherBlender(0.1, false);
+    ms::cvSeamlessCloning* blender3 = new ms::cvSeamlessCloning();
+
+    Mat pano = vImages.front().clone(), panoS;
+    pano.convertTo(panoS, CV_16SC3);
+    const Rect dstROI(0, 0, pano.cols, pano.rows);
+
+    for (int i = 1; i < N; ++i) {
+        Mat foreground, backgroundMask;
+        vImages[i].copyTo(foreground, vForegroundMasks[i]);
+        Rect foreRectPosition = boundingRect(vForegroundMasks[i]);
+        bitwise_not(vForegroundMasks[i], backgroundMask);
+
+        Mat frameS, blendResult1, blendResult2, blendResult3, blendMask1, blendMask2;
+        vImages[i].convertTo(frameS, CV_16SC3);
+
+//        Mat panoWithForeInner, foreMaskEdge, foreMaskInner, backMaskInner;
+//        erode(vForegroundMasks[i], foreMaskInner, kernel2);
+//        foreMaskEdge = vForegroundMasks[i] - foreMaskInner;
+//        bitwise_not(foreMaskEdge, backMaskInner);
+//        panoWithForeInner = pano.clone();
+//        vImages[i].copyTo(panoWithForeInner, foreMaskInner);
+//        panoWithForeInner.convertTo(panoWithForeInner, CV_16SC3);
+//        imshow("panoWithForeInner", panoWithForeInner);
+
+        // test blending
+        blender1->prepare(dstROI);
+        blender1->feed(frameS(foreRectPosition), vForegroundMasks[i](foreRectPosition), foreRectPosition.tl());
+        blender1->feed(panoS, backgroundMask, Point(0, 0));
+//        blender1->feed(frameS(foreRectPosition), foreMaskEdge, foreRectPosition.tl());
+//        blender1->feed(panoWithForeInner, backMaskInner, Point(0, 0));
+        blender1->blend(blendResult1, blendMask1);
+        blendResult1.convertTo(blendResult1, CV_8UC3);
+
+        Mat foreMaskForFeather;
+        smoothMaskWeightEdge(vForegroundMasks[i](foreRectPosition), foreMaskForFeather, 16);
+        blender2->prepare(dstROI);
+        blender2->feed(frameS(foreRectPosition), foreMaskForFeather, foreRectPosition.tl());
+        blender2->feed(panoS, backgroundMask, Point(0, 0));
+        blender2->blend(blendResult2, blendMask2);
+        blendResult2.convertTo(blendResult2, CV_8UC3);
+
+        const Mat kernel3 = getStructuringElement(MORPH_CROSS, Size(15, 15));
+        Mat foreMaskForSeamlessClone;
+        dilate(vForegroundMasks[i], foreMaskForSeamlessClone, kernel3);
+        Point2f center = (foreRectPosition.tl() + foreRectPosition.br()) * 0.5;
+        cvSeamlessClone(vImages[i], pano, foreMaskForSeamlessClone, center, blendResult3, NORMAL_CLONE);
+//        blender2->normalClone(pano, vImages[i], vForegroundMasks[i], panoMaskToClone, blendResult2, NORMAL_CLONE);
+
+        const string txt1 = "/home/vance/output/ms/第" + to_string(i) + "帧单个前景融合-多频段.jpg";
+        const string txt2 = "/home/vance/output/ms/第" + to_string(i) + "帧单个前景融合-羽化.jpg";
+        const string txt3 = "/home/vance/output/ms/第" + to_string(i) + "帧单个前景融合-泊松.jpg";
+        imwrite(txt1, blendResult1);
+        imwrite(txt2, blendResult2);
+        imwrite(txt3, blendResult3);
+        imshow("blendResult1(multiband)", blendResult1);
+        imshow("blendResult2(feather)", blendResult2);
+        imshow("blendResult2(poisson)", blendResult3);
+        waitKey(30);
+    }
+
+    exit(0);
+#endif
+    }
 
     //! TODO  计算出来的光流对应的图像和序号还没弄好!!!
 #if USE_FLOW_WEIGHT

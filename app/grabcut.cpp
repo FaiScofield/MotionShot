@@ -1,3 +1,5 @@
+#include "MotionShoter/utility.h"
+
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -150,7 +152,7 @@ void GCApplication::saveFGDMask()
     getBinMask(mask, fgdMask);
     normalize(fgdMask, fgdMask, 0, 255, NORM_MINMAX);
 
-    const string txt = "/home/vance/output/mask-" + to_string(idx) + ".jpg";
+    const string txt = "/home/vance/output/mask-" + to_string(idx) + ".png";
     imwrite(txt, fgdMask);
     imshow("fgdMask", fgdMask);
     cout << "Save the FGD mask to " << txt << endl;
@@ -300,7 +302,8 @@ int main(int argc, char** argv)
     }
 
     double scale = parser.get<double>("@scale");
-    cout << " - scale set to " << scale << endl;
+    INFO("Set scale to " << scale);
+    INFO("Image size is " << image.size());
 
     const string winName = "image";
     namedWindow(winName, WINDOW_AUTOSIZE);
