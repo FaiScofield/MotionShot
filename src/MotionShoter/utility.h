@@ -90,6 +90,11 @@ cv::Mat guidedFilter(const cv::Mat& src, int radius, double eps);
 // 边缘滤波
 void overlappedEdgesSmoothing(const cv::Mat& src, const cv::Mat& mask, cv::Mat& dst, double scale = 0.5);
 
+void applyEdgeFilter(cv::Mat& src, const std::vector<cv::Point>& points, const std::vector<int>& dirs);
+
+void applyEdgeFilter(const cv::Mat& src, cv::Mat& dst, const std::vector<cv::Point>& points,
+                     const std::vector<int>& dirs);
+
 }  // namespace ms
 
 #endif  // UTILITY_HPP

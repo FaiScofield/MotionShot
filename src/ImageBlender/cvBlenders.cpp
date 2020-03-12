@@ -149,8 +149,10 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
 {
 #define ENABLE_DEBUG_RESULT_FEATHER_FEED1 0
 
+
     Mat img = _img.getMat();
     Mat dst = dst_.getMat(ACCESS_RW);
+    const bool largeWin = (img.cols > 1600 || img.rows > 1200);
 
     assert(img.type() == CV_16SC3);
     assert(mask.type() == CV_8UC1);
@@ -169,19 +171,36 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
     if (enable_cover_) {
         Mat srcMask, dstMask;
         srcMask = mask.getMat();
-        dst_weight_map.convertTo(dstMask, CV_8UC1);
+        dst_weight_map.convertTo(dstMask, CV_8UC1, 255);
 
         Mat overlappedArea, ignoreArea, edge;
         bitwise_and(dstMask, 255, overlappedArea, srcMask);         // 得到重叠区域
         morphologyEx(overlappedArea, edge, MORPH_GRADIENT, Mat());  // 得到重叠区域边缘
 
+//        namedLargeWindow("当前帧输入掩模", largeWin);
+//        imshow("当前帧输入掩模", srcMask);
+//        namedLargeWindow("当前帧已有掩模", largeWin);
+//        imshow("当前帧已有掩模", dstMask);
+//        namedLargeWindow("重叠区域", largeWin);
+//        imshow("重叠区域", overlappedArea);
+//        namedLargeWindow("重叠区域边缘(未考虑覆盖)", largeWin);
+//        imshow("重叠区域边缘(未考虑覆盖)", edge);
+
+        //! 被覆盖的边缘需要消除
         const Mat kernel = getStructuringElement(MORPH_RECT, Size(5, 5));
-        morphologyEx(srcMask, ignoreArea, MORPH_ERODE, kernel);  // 被覆盖的边缘需要消除
+        morphologyEx(srcMask, ignoreArea, MORPH_ERODE, kernel);
         bitwise_and(edge, 0, edge, ignoreArea);
-        imshow("重叠区域边缘(考虑覆盖)", edge);
+        bitwise_and(overlapped_edges_mask_, 0, overlapped_edges_mask_, srcMask);
+
+//        namedLargeWindow("重叠区域边缘(考虑覆盖)", largeWin);
+//        imshow("重叠区域边缘(考虑覆盖)", edge);
 
         overlapped_edges_mask_ += edge;
         // threshold(overlapped_edges_mask_, overlapped_edges_mask_, 255, 255, THRESH_TRUNC);
+
+//        namedLargeWindow("重叠区域边缘总计", largeWin);
+//        imshow("重叠区域边缘总计", overlapped_edges_mask_);
+//        waitKey(0);
     }
 
     int dx = tl.x - dst_roi_.x;
@@ -216,7 +235,6 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
                     dst_row[dx + x].z = static_cast<short>(src_row[x].z * weight_row[x]);
                     dst_weight_row[dx + x] = weight_row[x];
                 } else if (dst_weight_row[dx + x] == 1.f) {
-                    //                    cout << weight_row[dx + x] << ", ";
                     // 待添加区域已经有精确前景则不添加
                 } else {
                     dst_row[dx + x].x += static_cast<short>(src_row[x].x * weight_row[x]);
@@ -235,13 +253,15 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
 
 
 #if ENABLE_DEBUG_RESULT_FEATHER_FEED1 && ENABLE_DEBUG_RESULT
-    imshow("tatal edge", overlapped_edges_mask_);
+//    imshow("tatal edge", overlapped_edges_mask_);
 
-    vector<vector<Point>> contours;
-    findContours(overlapped, contours, RETR_LIST, CHAIN_APPROX_SIMPLE);
+//    vector<vector<Point>> contours;
+//    findContours(overlapped, contours, RETR_LIST, CHAIN_APPROX_SIMPLE);
 
     dst.convertTo(disU, CV_8U);
-    drawContours(disU, contours, -1, Scalar(0, 255, 0), 2);
+//    drawContours(disU, contours, -1, Scalar(0, 255, 0), 2);
+    namedLargeWindow("dst after feed & overlapped area(green)", largeWin);
+    namedLargeWindow("dst_weight_map_ after feed", largeWin);
     imshow("dst after feed & overlapped area(green)", disU);
     imshow("dst_weight_map_ after feed", dst_weight_map_);
     waitKey(0);
