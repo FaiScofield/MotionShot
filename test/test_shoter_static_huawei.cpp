@@ -257,12 +257,12 @@ int main(int argc, char* argv[])
 //    imshow("allForeground", allForeground);
 
     // 画前景轮廓和重叠区域轮廓
-//    Mat allForegroundShow = allForeground.clone();
-//    vector<vector<Point>> contours;
-//    findContours(allForegroundMask, contours, RETR_LIST, CHAIN_APPROX_SIMPLE);
-//    drawContours(allForegroundShow, contours, -1, Scalar(255,0,0), 2);  // 画前景轮廓
-//    const Mat overlappedEdges = blender->getOverlappedEdgesMask(0);
-//    allForegroundShow.setTo(Scalar(0,255,0), overlappedEdges);  // 画重叠区域轮廓
+    Mat allForegroundShow = allForeground.clone();
+    vector<vector<Point>> contours;
+    findContours(allForegroundMask, contours, RETR_LIST, CHAIN_APPROX_SIMPLE);
+    drawContours(allForegroundShow, contours, -1, Scalar(255,0,0), 2);  // 画前景轮廓
+    const Mat overlappedEdges = blender->getOverlappedEdgesMask(0);
+    allForegroundShow.setTo(Scalar(0,255,0), overlappedEdges);  // 画重叠区域轮廓
 //    namedLargeWindow("所有前景轮廓(蓝)&重叠区域(绿)", IS_LARGE_IMAGE_SIZE);
 //    imshow("所有前景轮廓(蓝)&重叠区域(绿)", allForegroundShow);
 //    waitKey(0);
@@ -273,15 +273,15 @@ int main(int argc, char* argv[])
 
 //    string txt1 = "/home/vance/output/ms/前景拼接结果-初始.jpg";
 //    imwrite(txt1, allForeground);
-//    string txt2 = "/home/vance/output/ms/前景重叠区域轮廓.jpg";
-//    imwrite(txt2, allForegroundShow);
+    string txt2 = "/home/vance/output/ms/前景重叠区域轮廓.jpg";
+    imwrite(txt2, allForegroundShow);
     timer.start();
 
     // 3.前景拼接结果改善(边缘滤波)
     Mat overlappedEdgesMask = blender->getOverlappedEdgesMask(15);
     bitwise_and(overlappedEdgesMask, allForegroundMask, overlappedEdgesMask);// 扣掉前景轮廓外那部分的待平滑区域
     Mat foregroundFiltered, foregroundFiltered_S;
-    overlappedEdgesSmoothing(allForeground, overlappedEdgesMask, foregroundFiltered, 0.5);
+    overlappedEdgesSmoothing(allForeground, overlappedEdgesMask, foregroundFiltered, 0.5, 8);
     foregroundFiltered.convertTo(foregroundFiltered_S, CV_16SC3);
 
     timer.stop();

@@ -1,3 +1,4 @@
+#include "utility.h"
 #include <boost/algorithm/string_regex.hpp>
 #include <boost/filesystem.hpp>
 #include <fstream>
@@ -87,10 +88,10 @@ void ReadImagesFromFolder_lasiesta(const string& folder, vector<Mat>& imgs)
     }
 
     if (allImages.empty()) {
-        cerr << "[Error] No image data in the folder!" << endl;
+        cerr << "[ERROR] No image data in the folder!" << endl;
         return;
     } else {
-        cout << "[Info ] Read " << allImages.size() << " images in " << folder << endl;
+        cout << "[INFO ] Read " << allImages.size() << " images in " << folder << endl;
     }
 
     imgs.reserve(allImages.size());
@@ -384,7 +385,7 @@ void resizeFlipRotateImages(vector<Mat>& imgs, double scale, int flip, int rotat
 }
 
 void extractImagesToStitch(const vector<Mat>& vImages, vector<Mat>& vImagesToProcess, vector<int>& vIdxToProcess,
-                           vector<vector<int>>& vvIdxPerIter, int minFores = 3, int maxFores = 8)
+                           vector<vector<int>>& vvIdxPerIter, int minFores, int maxFores)
 {
     assert(minFores > 2 && minFores <= maxFores);
 
@@ -665,21 +666,6 @@ Rect resultRoi(const std::vector<Point>& corners, const std::vector<UMat>& image
     return resultRoi(corners, sizes);
 }
 
-void shrinkRoi(const Mat& src, Mat& dst, int size)
-{
-    assert(src.type() == CV_8UC1);
-
-    //    imshow("origin mask", src);
-
-    //    Mat tmp1, tmp2;
-    //    cvtColor(src, tmp1, COLOR_GRAY2BGR);
-
-    Mat kernel = getStructuringElement(MORPH_RECT, Size(size, size));
-    erode(src, dst, kernel, Point(-1, -1), 1, BORDER_CONSTANT);
-    //    imshow("mask shrink", dst);
-
-    //    waitKey(0);
-}
 
 /**
  * @brief 为输入的二值掩模创建一个过渡区域
@@ -810,22 +796,33 @@ Mat guidedFilter(const Mat& src, int radius, double eps)
  * @param img   输入输出图像, 单通道
  * @param x     边缘点横坐标
  * @param y     边缘点纵坐标
- * @param dir   边缘点梯度方向, 1-4, 前两个水平, 后两个垂直
+ * @param dir   边缘点梯度方向, (0, 4]分别表示: - | \ /
  */
 void applyEdgeFilter(cv::Mat& img, int x, int y, int dir)
 {
     assert(img.type() == CV_8UC1);  // 8UC1
     assert(dir > 0 && dir < 5);
 
-    // 01是水平方向, 23是垂直方向
     static vector<Mat> vKernels;
+//    if (vKernels.empty()) {
+//        vKernels.resize(4);
+//        vKernels[0] = (Mat_<float>(3, 3) << 3, 0, 3, 10, 0, 10, 3, 0, 3);
+//        vKernels[0] = vKernels[0] / sum(vKernels[0]);
+//        vKernels[1] = vKernels[0].t();
+//        vKernels[2] = (Mat_<float>(3, 3) << 10, 3, 0, 3, 0, 3, 0, 3, 10);
+//        vKernels[2] = vKernels[2] / sum(vKernels[2]);
+//        vKernels[3] = (Mat_<float>(3, 3) << 0, 3, 10, 3, 0, 3, 10, 3, 0);
+//        vKernels[3] = vKernels[3] / sum(vKernels[3]);
+//    }
     if (vKernels.empty()) {
         vKernels.resize(4);
-        vKernels[0] = (Mat_<float>(3, 3) << 3, 0, 3, 6, 0, 6, 3, 0, 3);
+        vKernels[0] = (Mat_<float>(3, 3) << 1, 0, 1, 10, 0, 10, 1, 0, 1);
         vKernels[0] = vKernels[0] / sum(vKernels[0]);
-        vKernels[1] = vKernels[0];
-        vKernels[2] = vKernels[0].t();
-        vKernels[3] = vKernels[2];
+        vKernels[1] = vKernels[0].t();
+        vKernels[2] = (Mat_<float>(3, 3) << 10, 1, 0, 1, 0, 1, 0, 1, 10);
+        vKernels[2] = vKernels[2] / sum(vKernels[2]);
+        vKernels[3] = (Mat_<float>(3, 3) << 0, 1, 10, 1, 0, 1, 10, 1, 0);
+        vKernels[3] = vKernels[3] / sum(vKernels[3]);
     }
 
     if (x - 1 < 0 || y - 1 < 0 || x + 1 >= img.cols || y + 1 >= img.rows)
@@ -839,84 +836,20 @@ void applyEdgeFilter(cv::Mat& img, int x, int y, int dir)
     img.at<uchar>(y, x) = static_cast<uchar>(sum(result)[0]);
 }
 
-void applyEdgeFilter(const Mat& src, Mat& dst, const vector<Point>& points, const vector<int>& dirs)
-{
-    assert(src.channels() == 1);  // 8UC1
-    assert(points.size() == dirs.size());
-
-    static vector<Mat> vKernels;
-    if (vKernels.empty()) {
-        vKernels.resize(4);
-        vKernels[0] = (Mat_<float>(5, 5) << 0, 0, 0, 0, 0, 5, 1, 0, 1, 5, 10, 1, 0, 1, 10, 5, 1, 0,
-                       1, 5, 0, 0, 0, 0, 0);
-        vKernels[0] = vKernels[0] / sum(vKernels[0]);
-        vKernels[1] = vKernels[0];
-        vKernels[2] = vKernels[0].t();
-        vKernels[3] = vKernels[2];
-    }
-
-    src.copyTo(dst);
-    for (size_t i = 0, iend = points.size(); i < iend; ++i) {
-        const int dir = dirs[i];
-        if (dir < 1 || dir > 4)
-            continue;
-
-        const Point& p = points[i];
-        if (p.x - 2 < 0 || p.y - 2 < 0 || p.x + 2 >= src.cols || p.y + 2 >= src.rows)
-            continue;
-
-        const Mat& kernel = vKernels[dir - 1];
-        const Mat& neighbor = src.rowRange(p.y - 2, p.y + 3).colRange(p.x - 2, p.x + 3);
-        Mat result;
-        multiply(neighbor, kernel, result, 1, CV_32FC1);
-        dst.at<uchar>(p.y, p.x) = static_cast<uchar>(sum(result)[0]);
-    }
-}
-
-void applyEdgeFilter(Mat& src, const vector<Point>& points, const vector<int>& dirs)
-{
-    assert(src.channels() == 1);  // 8UC1
-    assert(points.size() == dirs.size());
-
-    static vector<Mat> vKernels;
-    if (vKernels.empty()) {
-        vKernels.resize(4);
-        vKernels[0] = (Mat_<float>(3, 3) << 3, 0, 3, 10, 0, 10, 3, 0, 3);
-        vKernels[0] = vKernels[0] / sum(vKernels[0]);
-        vKernels[1] = vKernels[0];
-        vKernels[2] = vKernels[0].t();
-        vKernels[3] = vKernels[2];
-    }
-
-    for (size_t i = 0, iend = points.size(); i < iend; ++i) {
-        const int dir = dirs[i];
-        if (dir < 1 || dir > 4)
-            continue;
-
-        const Point& p = points[i];
-        if (p.x - 1 < 0 || p.y - 1 < 0 || p.x + 1 >= src.cols || p.y + 1 >= src.rows)
-            continue;
-
-        const Mat& kernel = vKernels[dir - 1];
-        const Mat& neighbor = src.rowRange(p.y - 1, p.y + 2).colRange(p.x - 1, p.x + 2);
-        Mat result;
-        multiply(neighbor, kernel, result, 1, CV_32FC1);
-        src.at<uchar>(p.y, p.x) = static_cast<uchar>(sum(result)[0]);
-    }
-}
-
 /**
  * @brief overlappedEdgesSmoothing  重叠区域的边缘平滑, 主要是为了消除前景重叠区域边缘处的锯齿
  * @param src   拼接后的前景图
  * @param mask  前景图中重叠区域的边缘掩模(降低计算量, 限制处理范围)
  * @param dst   结果图
+ * @param dirs  要计算的梯度方向数, 4/8, 默认4个
  */
-void overlappedEdgesSmoothing(const cv::Mat& src, const cv::Mat& mask, cv::Mat& dst, double scale)
+void overlappedEdgesSmoothing(const cv::Mat& src, const cv::Mat& mask, cv::Mat& dst, double scale, int dirs)
 {
 #define ENABLE_DEBUG_EDGE_FILTER 0
 #define SMOOTH_UPLOARD 0  // 梯度上采样后计算(反之下采样)
 
     assert(scale > 0 && scale <= 1.);
+    assert(dirs == 4 || dirs == 8);
     const double invScale = 1. / scale;
 
     static vector<Mat> vKernels;
@@ -924,11 +857,17 @@ void overlappedEdgesSmoothing(const cv::Mat& src, const cv::Mat& mask, cv::Mat& 
         vKernels.resize(4);
         vKernels[0] = (Mat_<char>(3, 3) << -3, 0, 3, -10, 0, 10, -3, 0, 3);
         vKernels[1] = -vKernels[0];
-
         vKernels[2] = vKernels[0].t();
         vKernels[3] = -vKernels[2];
-        // vKernels[2] = (Mat_<char>(3, 3) << -10, -3, 0, -3, 0, 3, 0, 3, 10);
-        // vKernels[3] = (Mat_<char>(3, 3) << 0, 3, 10, -3, 0, 3, -10, -3, 0);
+
+        if (dirs == 8) {
+            vKernels.resize(8);
+            vKernels[4] = (Mat_<char>(3, 3) << -10, -3, 0, -3, 0, 3, 0, 3, 10);
+            vKernels[5] = -vKernels[4];
+            vKernels[6] = (Mat_<char>(3, 3) << 0, 3, 10, -3, 0, 3, -10, -3, 0);
+            vKernels[7] = -vKernels[5];
+            INFO("Set gradient directions to calculation to 8.");
+        }
     }
 
     static vector<Point3_<uchar>> vLableColor;
@@ -941,13 +880,13 @@ void overlappedEdgesSmoothing(const cv::Mat& src, const cv::Mat& mask, cv::Mat& 
         vLableColor[4] = Point3_<uchar>(255, 255, 255);
     }
 
-    // 1.下采样并在Y域上求解4个方向的梯度
+    // 1.下采样并在Y域上求解4/8个方向的梯度
     Mat srcGray, srcScaled, maskScaled;
     cvtColor(src, srcGray, COLOR_BGR2GRAY);
     resize(srcGray, srcScaled, Size(), scale, scale);
     resize(mask, maskScaled, Size(), scale, scale);
-    vector<Mat> vEdges_F(4);
-    for (int i = 0; i < 4; ++i) {
+    vector<Mat> vEdges_F(dirs);
+    for (int i = 0; i < dirs; ++i) {
         filter2D(srcScaled, vEdges_F[i], CV_32F, vKernels[i]);
 #if ENABLE_DEBUG && ENABLE_DEBUG_EDGE_FILTER
         const string txt = "/home/vance/output/ms/初始梯度方向" + to_string(i + 1) + ".png";
@@ -977,7 +916,7 @@ void overlappedEdgesSmoothing(const cv::Mat& src, const cv::Mat& mask, cv::Mat& 
 //    imwrite(txt1234, g1234);
 #endif
 
-    // 2.对掩模对应的区域的梯度, 选出4个方向中的最大者并标记最大梯度方向
+    // 2.对掩模对应的区域的梯度, 选出4/8个方向中的最大者并标记最大梯度方向
     Mat maxEdge_F = Mat::zeros(srcScaled.size(), CV_32FC1);
     Mat dstLabel = Mat::zeros(srcScaled.size(), CV_8UC1);
     Mat distLabelColor = Mat::zeros(srcScaled.size(), CV_8UC3);
@@ -989,13 +928,13 @@ void overlappedEdgesSmoothing(const cv::Mat& src, const cv::Mat& mask, cv::Mat& 
 
         for (int x = 0; x < srcScaled.cols; ++x) {
             if (mask_row[x] != 0) {
-                int label = 0;
+                int label = 0;  // 默认无梯度则黑色
                 float maxGradient = 0.f;
-                for (int i = 0; i < 4; ++i) {
+                for (int i = 0; i < dirs; ++i) {
                     const float g = vEdges_F[i].at<float>(y, x);
                     if (g > maxGradient) {
                         maxGradient = g;
-                        label = i + 1;
+                        label = i / 2 + 1;
                     }
                 }
                 dst_row[x] = maxGradient;
@@ -1063,11 +1002,11 @@ void overlappedEdgesSmoothing(const cv::Mat& src, const cv::Mat& mask, cv::Mat& 
                 continue;
 
             if (edge_row[x] > 0) {
-                //                applyEdgeFilter(dstChanels[0], x, y, label_row[x_scaled]);
-                //                applyEdgeFilter(dstChanels[1], x, y, label_row[x_scaled]);
-                //                applyEdgeFilter(dstChanels[2], x, y, label_row[x_scaled]);
-                vPointsToSmooth.push_back(Point(x, y));
-                vDirsToSmooth.push_back(label_row[x_scaled]);
+                applyEdgeFilter(dstChanels[0], x, y, label_row[x_scaled]);
+                applyEdgeFilter(dstChanels[1], x, y, label_row[x_scaled]);
+                applyEdgeFilter(dstChanels[2], x, y, label_row[x_scaled]);
+//                vPointsToSmooth.push_back(Point(x, y));
+//                vDirsToSmooth.push_back(label_row[x_scaled]);
             }
         }
     }
@@ -1083,19 +1022,19 @@ void overlappedEdgesSmoothing(const cv::Mat& src, const cv::Mat& mask, cv::Mat& 
             if (x_scaled >= dstLabel.cols)
                 continue;
 
-            if (label_row[x_scaled] != 0) {
+            if (label_row[x_scaled] > 0) {
                 applyEdgeFilter(dstChanels[0], x, y, label_row[x_scaled]);
                 applyEdgeFilter(dstChanels[1], x, y, label_row[x_scaled]);
                 applyEdgeFilter(dstChanels[2], x, y, label_row[x_scaled]);
-                vPointsToSmooth.push_back(Point(x, y));
-                vDirsToSmooth.push_back(label_row[x_scaled]);
+//                vPointsToSmooth.push_back(Point(x, y));
+//                vDirsToSmooth.push_back(label_row[x_scaled]);
             }
         }
     }
 #endif
-    //    applyEdgeFilter(srcChannels[0], dstChanels[0], vPointsToSmooth, vDirsToSmooth);
-    //    applyEdgeFilter(srcChannels[1], dstChanels[1], vPointsToSmooth, vDirsToSmooth);
-    //    applyEdgeFilter(srcChannels[2], dstChanels[2], vPointsToSmooth, vDirsToSmooth);
+//    applyEdgeFilter(srcChannels[0], dstChanels[0], vPointsToSmooth, vDirsToSmooth);
+//    applyEdgeFilter(srcChannels[1], dstChanels[1], vPointsToSmooth, vDirsToSmooth);
+//    applyEdgeFilter(srcChannels[2], dstChanels[2], vPointsToSmooth, vDirsToSmooth);
     merge(dstChanels, dst);
 
 #if ENABLE_DEBUG && ENABLE_DEBUG_EDGE_FILTER

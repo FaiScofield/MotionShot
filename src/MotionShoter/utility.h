@@ -77,7 +77,6 @@ cv::Rect resultRoi(const std::vector<cv::Point>& corners, const std::vector<cv::
 
 cv::Rect resultRoi(const std::vector<cv::Point>& corners, const std::vector<cv::UMat>& images);
 
-void shrinkRoi(const cv::Mat& src, cv::Mat& dst, int size);
 
 void smoothMaskWeightEdge(const cv::Mat& src, cv::Mat& dst, int b1, int b2 = 0);
 
@@ -88,12 +87,10 @@ float getPixelValue(const cv::Mat& img, float x, float y);
 cv::Mat guidedFilter(const cv::Mat& src, int radius, double eps);
 
 // 边缘滤波
-void overlappedEdgesSmoothing(const cv::Mat& src, const cv::Mat& mask, cv::Mat& dst, double scale = 0.5);
+void applyEdgeFilter(cv::Mat& img, int x, int y, int dir);
+void overlappedEdgesSmoothing(const cv::Mat& src, const cv::Mat& mask, cv::Mat& dst,
+                              double scale = 0.5, int dirs = 4);
 
-void applyEdgeFilter(cv::Mat& src, const std::vector<cv::Point>& points, const std::vector<int>& dirs);
-
-void applyEdgeFilter(const cv::Mat& src, cv::Mat& dst, const std::vector<cv::Point>& points,
-                     const std::vector<int>& dirs);
 
 }  // namespace ms
 
