@@ -17,7 +17,7 @@ struct GCAPP
     void setImage(const cv::Mat& img) { img.copyTo(image_); }
     void setOutConfigName(const string& name) { outConfigName_ = &name; }
     void setWindowName(const string& name) { winName_ = &name; }
-    void setOutImageName(const string& name) { outImageName_ = name; }
+    void setOutImageName(const string& name) { outImageName_ = name;}
 
     void showImage();
     void mouseClick(int event, int x, int y, int flags, void* param);
@@ -48,6 +48,11 @@ void GCAPP::showImage()
 
 void GCAPP::mouseClick(int event, int x, int y, int flags, void *param)
 {
+    x = x < 0 ? 0 : x;
+    y = y < 0 ? 0 : y;
+    x = x >= image_.cols ? image_.cols - 1 : x;
+    y = y >= image_.rows ? image_.rows - 1 : y;
+
     switch (event) {
     case EVENT_LBUTTONDOWN: {
         if (rectState_ == NOT_SET) {
@@ -58,16 +63,12 @@ void GCAPP::mouseClick(int event, int x, int y, int flags, void *param)
     case EVENT_LBUTTONUP: {
         if (rectState_ == IN_PROCESS) {
             rectState_ = SET;
-            x = x >= image_.cols ? image_.cols - 1 : x;
-            y = y >= image_.rows ? image_.rows - 1 : y;
             rect_ = Rect(Point(rect_.x, rect_.y), Point(x, y));
             showImage();
         }
        break;}
     case EVENT_MOUSEMOVE: {
         if (rectState_ == IN_PROCESS) {
-            x = x >= image_.cols ? image_.cols - 1 : x;
-            y = y >= image_.rows ? image_.rows - 1 : y;
             rect_ = Rect(Point(rect_.x, rect_.y), Point(x, y));
             showImage();
         }
@@ -173,8 +174,9 @@ int main(int argc, char* argv[])
 
     vector<int> params{/*IMWRITE_JPEG_QUALITY*/IMWRITE_PNG_COMPRESSION};
     if (mark) {
-        const string winName = "image show";
-        namedWindow(winName, WINDOW_AUTOSIZE);
+        const string winName = "Image Sequence";
+        namedWindow(winName, WINDOW_KEEPRATIO);
+//        namedWindow(winName, WINDOW_AUTOSIZE);
 
         string outConfigFile = str_output + "/rect_param.txt";
         gcapp.setOutConfigName(outConfigFile);

@@ -22,17 +22,13 @@ enum InputType {
     TWO_IMAGES  = 4   // 两张图片
 };
 
-//enum SmoothMaskType {
-//    ERODE   = 0,    // 往里创建过渡区域
-//    DILATE  = 1,    // 往外创建过渡区域
-//    BOTH    = 2     // 往两个方向都创建过渡区域
-//};
 
 void namedLargeWindow(const std::string& title, bool flag = true);
 
 void ReadImageNamesFromFolder(const std::string& folder, std::vector<std::string>& names);
 
 void ReadImagesFromFolder_lasiesta(const std::string& folder, std::vector<cv::Mat>& imgs);
+
 void ReadGroundtruthFromFolder_lasiesta(const std::string& folder, std::vector<cv::Mat>& imgs);
 
 void ReadImagesFromVideo(const std::string& video, std::vector<cv::Mat>& imgs);
@@ -83,13 +79,12 @@ void smoothMaskWeightEdge(const cv::Mat& src, cv::Mat& dst, int b1, int b2 = 0);
 // 双线性插值
 float getPixelValue(const cv::Mat& img, float x, float y);
 
-//导向滤波器
+// 导向滤波器
 cv::Mat guidedFilter(const cv::Mat& src, int radius, double eps);
 
 // 边缘滤波
 void applyEdgeFilter(cv::Mat& img, int x, int y, int dir);
-void overlappedEdgesSmoothing(const cv::Mat& src, const cv::Mat& mask, cv::Mat& dst,
-                              double scale = 0.5, int dirs = 4);
+void overlappedEdgesSmoothing(const cv::Mat& src, const cv::Mat& mask, cv::Mat& dst, double scale = 0.5);
 
 
 }  // namespace ms

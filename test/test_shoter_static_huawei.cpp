@@ -281,7 +281,7 @@ int main(int argc, char* argv[])
     Mat overlappedEdgesMask = blender->getOverlappedEdgesMask(15);
     bitwise_and(overlappedEdgesMask, allForegroundMask, overlappedEdgesMask);// 扣掉前景轮廓外那部分的待平滑区域
     Mat foregroundFiltered, foregroundFiltered_S;
-    overlappedEdgesSmoothing(allForeground, overlappedEdgesMask, foregroundFiltered, 0.5, 8);
+    overlappedEdgesSmoothing(allForeground, overlappedEdgesMask, foregroundFiltered, 0.5);
     foregroundFiltered.convertTo(foregroundFiltered_S, CV_16SC3);
 
     timer.stop();
