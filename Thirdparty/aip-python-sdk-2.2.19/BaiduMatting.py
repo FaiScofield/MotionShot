@@ -45,7 +45,7 @@ SECRET_KEY = 'sx8w8l1dzlD2Gt0QAKgZxItRB3uE8DZz'
 client = AipBodyAnalysis(APP_ID, API_KEY, SECRET_KEY)
 
 
-src_dir = '/home/vance/dataset/rk/Phone/withGT/omj8/image_rect'
+src_dir = '/home/vance/dataset/rk/Phone/withGT3/demo3/image_rect'
 #output_dir = '/home/vance/dataset/rk/Phone/withGT2/girl-walk-sj-7/gt_rect_baidu'
 images = os.listdir(src_dir)
 

@@ -86,6 +86,9 @@ void cvBlender::prepare(Rect dst_roi)
     dst_mask_.setTo(Scalar::all(0));
     dst_roi_ = dst_roi;
 
+    overlapped_edges_mask_width_ = 5;
+    overlapped_edges_.create(dst_roi.size(), CV_8U);
+    overlapped_edges_.setTo(Scalar::all(0));
     overlapped_edges_mask_.create(dst_roi.size(), CV_8U);
     overlapped_edges_mask_.setTo(Scalar::all(0));
 }
@@ -128,6 +131,20 @@ void cvBlender::blend(InputOutputArray dst, InputOutputArray dst_mask)
     dst_.release();
     dst_mask_.release();
 }
+
+Mat cvBlender::getOverlappedEdgesMask(int size) const
+{
+    Mat res;
+
+    if (size > 1) {
+        const Mat kernel = getStructuringElement(MORPH_RECT, Size(size, size));
+        dilate(overlapped_edges_mask_, res, kernel);  // 膨胀
+    } else {
+        res = overlapped_edges_mask_.clone();
+    }
+    return res;
+}
+
 
 cvFeatherBlender::cvFeatherBlender(float sharpness, bool cover) : enable_cover_(cover)
 {
@@ -172,34 +189,40 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
         Mat srcMask, dstMask;
         srcMask = mask.getMat();
         dst_weight_map.convertTo(dstMask, CV_8UC1, 255);
+        threshold(srcMask, srcMask, 254, 255, THRESH_BINARY); // 获取100%是前景的区域
 
         Mat overlappedArea, ignoreArea, edge;
         bitwise_and(dstMask, 255, overlappedArea, srcMask);         // 得到重叠区域
         morphologyEx(overlappedArea, edge, MORPH_GRADIENT, Mat());  // 得到重叠区域边缘
 
-//        namedLargeWindow("当前帧输入掩模", largeWin);
-//        imshow("当前帧输入掩模", srcMask);
-//        namedLargeWindow("当前帧已有掩模", largeWin);
-//        imshow("当前帧已有掩模", dstMask);
-//        namedLargeWindow("重叠区域", largeWin);
-//        imshow("重叠区域", overlappedArea);
-//        namedLargeWindow("重叠区域边缘(未考虑覆盖)", largeWin);
-//        imshow("重叠区域边缘(未考虑覆盖)", edge);
-
         //! 被覆盖的边缘需要消除
-        const Mat kernel = getStructuringElement(MORPH_RECT, Size(5, 5));
-        morphologyEx(srcMask, ignoreArea, MORPH_ERODE, kernel);
+        morphologyEx(srcMask, ignoreArea, MORPH_ERODE, Mat());
         bitwise_and(edge, 0, edge, ignoreArea);
-        bitwise_and(overlapped_edges_mask_, 0, overlapped_edges_mask_, srcMask);
+        bitwise_and(overlapped_edges_, 0, overlapped_edges_, srcMask);
+        overlapped_edges_ += edge;
+
+        //! 获得前景边缘往内的一部分掩模, 这里往往会有一些白边
+        const int s = 2 * overlapped_edges_mask_width_ + 1;
+        const Mat kernel = getStructuringElement(MORPH_RECT, Size(s, s));
+        Mat gapMask, overEroded, maksEroded;
+        erode(overlappedArea, overEroded, kernel);
+        erode(srcMask, maksEroded, kernel);
+        gapMask = overlappedArea - overEroded;
+        bitwise_and(gapMask, 0, gapMask, maksEroded);
+        overlapped_edges_mask_ += gapMask;
+
+        Mat imgU, gap, weightMap_U;
+        img.convertTo(imgU, CV_8UC3);
+        weight_map.convertTo(weightMap_U, CV_8UC1);
+        imwrite("/home/vance/output/ms/去除gap前.png", weightMap_U);
+        smoothEdgesOnOverlappedArea(imgU, gapMask, gap, 0.5); //! TODO
+        bitwise_and(weightMap_U, 0, weightMap_U, gap);
+        imwrite("/home/vance/output/ms/去除gap后.png", weightMap_U);
 
 //        namedLargeWindow("重叠区域边缘(考虑覆盖)", largeWin);
-//        imshow("重叠区域边缘(考虑覆盖)", edge);
-
-        overlapped_edges_mask_ += edge;
-        // threshold(overlapped_edges_mask_, overlapped_edges_mask_, 255, 255, THRESH_TRUNC);
-
-//        namedLargeWindow("重叠区域边缘总计", largeWin);
-//        imshow("重叠区域边缘总计", overlapped_edges_mask_);
+//        imshow("重叠区域边缘(考虑覆盖)", overlapped_edges_);
+//        namedLargeWindow("重叠区域边缘掩模(考虑覆盖)", largeWin);
+//        imshow("重叠区域边缘掩模(考虑覆盖)", overlapped_edges_mask_);
 //        waitKey(0);
     }
 
@@ -369,6 +392,200 @@ void cvFeatherBlender::blend(InputOutputArray dst, InputOutputArray dst_mask)
     cvBlender::blend(dst, dst_mask);
 }
 
+/**
+ * @brief overlappedEdgesSmoothing  重叠区域的边缘平滑, 主要是为了消除前景重叠区域边缘处的锯齿
+ * @param src   拼接后的前景图, 16SC3
+ * @param mask  前景图中重叠区域的边缘掩模(降低计算量, 限制处理范围), 8UC1
+ * @param dst   结果图
+ * @param scale 下采样的尺度比例
+ */
+void cvFeatherBlender::smoothEdgesOnOverlappedArea(const cv::Mat& src, const cv::Mat& mask, cv::Mat& dst, float scale)
+{
+#define ENABLE_DEBUG_RESULT_FEATHER_SMOOTH 1
+
+    assert(scale > 0 && scale <= 1.);
+    const double invScale = 1. / scale;
+
+    // 初始化梯度计算的核和梯度方向颜色
+    static vector<Mat> vKernels;
+    if (vKernels.empty()) {
+        vKernels.resize(4);
+        vKernels[0] = (Mat_<char>(3, 3) << -3, 0, 3, -10, 0, 10, -3, 0, 3);
+        vKernels[1] = vKernels[0].t();
+        vKernels[2] = (Mat_<char>(3, 3) << -10, -3, 0, -3, 0, 3, 0, 3, 10);
+        vKernels[3] = (Mat_<char>(3, 3) << 0, 3, 10, -3, 0, 3, -10, -3, 0);
+    }
+    static vector<Point3_<uchar>> vLableColor;
+    if (vLableColor.empty()) {
+        vLableColor.resize(5);
+        vLableColor[0] = Point3_<uchar>(0, 0, 0);
+        vLableColor[1] = Point3_<uchar>(0, 0, 255);
+        vLableColor[2] = Point3_<uchar>(0, 255, 0);
+        vLableColor[3] = Point3_<uchar>(255, 0, 0);
+        vLableColor[4] = Point3_<uchar>(255, 255, 255);
+    }
+
+    // 1.下采样并在Y域上求解4个方向的梯度
+    Mat srcGray, srcScaled, srcGrayScaled, maskScaled;
+    resize(src, srcScaled, Size(), scale, scale);
+    resize(mask, maskScaled, Size(), scale, scale);
+    cvtColor(src, srcGray, COLOR_BGR2GRAY);
+    resize(srcGray, srcGrayScaled, Size(), scale, scale);
+    vector<Mat> vEdges_F(4);
+    for (int i = 0; i < 4; ++i)
+        filter2D(srcGrayScaled, vEdges_F[i], CV_32FC1, vKernels[i], Point(-1, -1), 0, BORDER_REPLICATE);
+
+//#if ENABLE_DEBUG_RESULT && ENABLE_DEBUG_RESULT_FEATHER_SMOOTH
+//    Mat g12 = (cv::abs(vEdges_F[0]) + cv::abs(vEdges_F[1])) * 0.5;
+//    Mat g34 = (cv::abs(vEdges_F[2]) + cv::abs(vEdges_F[3])) * 0.5;
+//    normalize(g12, g12, 0.f, 1.f, NORM_MINMAX);
+//    g12.convertTo(g12, CV_8UC1, 255);
+//    normalize(g34, g34, 0.f, 1.f, NORM_MINMAX);
+//    g34.convertTo(g34, CV_8UC1, 255);
+//    bitwise_or(0, g12, g12, maskScaled);
+//    bitwise_or(0, g34, g34, maskScaled);
+//    imwrite("/home/vance/output/ms/初始梯度方向1+2.png", g12);
+//    imwrite("/home/vance/output/ms/初始梯度方向3+4.png", g34);
+//#endif
+
+    // 2.对掩模对应的区域的梯度, 选出4个方向中的最大者并标记最大梯度方向
+    Mat maxEdge_Full = Mat::zeros(srcGrayScaled.size(), CV_32FC1);
+    Mat maxEdge_F = Mat::zeros(srcGrayScaled.size(), CV_32FC1);
+    Mat dstLabel = Mat::zeros(srcGrayScaled.size(), CV_8UC1);   // 掩模区内边缘的方向
+    Mat distLabelColor = Mat::zeros(srcGrayScaled.size(), CV_8UC3);
+    for (int y = 0; y < srcGrayScaled.rows; ++y) {
+        const char* mask_row = maskScaled.ptr<char>(y);
+        float* dst_row = maxEdge_F.ptr<float>(y);
+        char* label_row = dstLabel.ptr<char>(y);
+        Point3_<uchar>* distLabelColor_row = distLabelColor.ptr<Point3_<uchar>>(y);
+
+        float* tmp_row = maxEdge_Full.ptr<float>(y);
+
+        for (int x = 0; x < srcGrayScaled.cols; ++x) {
+//            if (mask_row[x] != 0) {
+                int label = 0;  // 默认无梯度则黑色
+                float maxGradient = 0.f;
+                for (int i = 0; i < 4; ++i) {
+                    const float g = abs(vEdges_F[i].at<float>(y, x)); // 绝对值符号使正负方向为同一方向
+                    if (g > maxGradient) {
+                        maxGradient = g;
+                        label = i + 1;
+                    }
+                }
+                tmp_row[x] = maxGradient;
+                if (mask_row[x] != 0) {
+                dst_row[x] = maxGradient;
+                label_row[x] = label;
+                distLabelColor_row[x] = vLableColor[label];
+            }
+        }
+    }
+    Mat finalEdge, gap;
+    maxEdge_F.convertTo(finalEdge, CV_8UC1);
+    normalize(finalEdge, finalEdge, 0, 255, NORM_MINMAX);  // 归一化
+    threshold(finalEdge, finalEdge, 10, 0, THRESH_TOZERO);  // 太小的梯度归0
+    threshold(finalEdge, gap, 150, 255, THRESH_OTSU);   // 白边区域
+
+#if ENABLE_DEBUG_RESULT && ENABLE_DEBUG_RESULT_FEATHER_SMOOTH
+    imwrite("/home/vance/output/ms/重叠区域最大梯度otsu.png", gap);
+
+    Mat tmp1;
+    imwrite("/home/vance/output/ms/重叠区域最大梯度强度.png", finalEdge);
+    imwrite("/home/vance/output/ms/重叠区域最大梯度方向.png", distLabelColor);
+
+    normalize(maxEdge_Full, maxEdge_Full, 0.f, 1.f, NORM_MINMAX);
+    maxEdge_Full.convertTo(tmp1, CV_8UC1, 255);
+    imwrite("/home/vance/output/ms/初始梯度最大值.png", tmp1);
+    Mat toShow = src.clone();
+#endif
+
+    //! 方法1, 直接去掉gap
+    dst = gap;
+/*
+    // 3.应用边缘滤波
+    vector<Mat> srcChannels(3), dstChanels(3);
+    split(src, srcChannels);
+    dstChanels = srcChannels;
+
+    vector<Point> vPointsToSmooth;
+    vector<int> vDirsToSmooth;
+    vPointsToSmooth.reserve(10000);
+    vDirsToSmooth.reserve(10000);
+
+
+    // 先在低尺度上滤波一次, 然后上采样回原尺度加权融合
+    vector<Mat> vDstScaledFilterd(3), vDstScaled(3);
+    resize(dstChanels[0], vDstScaled[0], Size(), scale, scale);
+    resize(dstChanels[1], vDstScaled[1], Size(), scale, scale);
+    resize(dstChanels[2], vDstScaled[2], Size(), scale, scale);
+    for (int i = 0; i < 3; ++i)
+        applyEdgeFilter(vDstScaled[i], finalEdge, dstLabel, vDstScaledFilterd[i]);
+
+    Mat dstScaledFilterd, dstFilterdOnce;
+    merge(vDstScaledFilterd, dstScaledFilterd);
+    resize(dstScaledFilterd, dstFilterdOnce, src.size());
+
+    imwrite("/home/vance/output/ms/前景(scaled).png", srcScaled);
+    imwrite("/home/vance/output/ms/前景(scaled)低尺度滤波.png", dstScaledFilterd);
+    imwrite("/home/vance/output/ms/前景低尺度滤波.png", dstFilterdOnce);
+
+    dst = src.clone();
+    dst.setTo(0, mask);
+
+    bitwise_or(dst, dstFilterdOnce, dst, mask);
+    imwrite("/home/vance/output/ms/前景低尺度滤波应用到原尺度.png", dst);
+    split(dst, dstChanels);
+
+    // 再到原尺度上滤波
+    for (int y = 0; y < src.rows; ++y) {
+        const int y_scaled = cvRound(y * scale);
+        if (y_scaled >= dstLabel.rows)
+            continue;
+
+        const uchar* edge_row = finalEdge.ptr<uchar>(y_scaled);
+        const uchar* label_row = dstLabel.ptr<uchar>(y_scaled);
+        for (int x = 0; x < src.cols; ++x) {
+            const int x_scaled = cvRound(x * scale);
+            if (x_scaled >= dstLabel.cols)
+                continue;
+
+            if (label_row[x_scaled] > 0 && edge_row[x_scaled] > 10) {
+                applyEdgeFilter(dstChanels[0], x, y, label_row[x_scaled]);
+                applyEdgeFilter(dstChanels[1], x, y, label_row[x_scaled]);
+                applyEdgeFilter(dstChanels[2], x, y, label_row[x_scaled]);
+//                vPointsToSmooth.push_back(Point(x, y));
+//                vDirsToSmooth.push_back(label_row[x_scaled]);
+                toShow.at<Vec3b>(y, x) = Vec3b(0,255,0);
+            }
+        }
+    }
+
+//    applyEdgeFilter(srcChannels[0], dstChanels[0], vPointsToSmooth, vDirsToSmooth);
+//    applyEdgeFilter(srcChannels[1], dstChanels[1], vPointsToSmooth, vDirsToSmooth);
+//    applyEdgeFilter(srcChannels[2], dstChanels[2], vPointsToSmooth, vDirsToSmooth);
+    merge(dstChanels, dst);
+
+#if ENABLE_DEBUG_RESULT && ENABLE_DEBUG_RESULT_FEATHER_SMOOTH
+    Mat input = src.clone(), output = dst.clone();
+    vector<vector<Point>> contours;
+    findContours(mask, contours, RETR_LIST, CHAIN_APPROX_SIMPLE);
+    drawContours(input, contours, -1, Scalar(0, 255, 0), 1);
+    drawContours(output, contours, -1, Scalar(0, 255, 0), 1);
+    //    namedLargeWindow("points to smooth", 1);
+    namedLargeWindow("src", 1);
+    namedLargeWindow("dst", 1);
+    //    imshow("src", input);
+    //    imshow("dst", dst);
+    imwrite("/home/vance/output/ms/输入前景和边缘掩模.png", input);
+    imwrite("/home/vance/output/ms/输出图像和边缘掩模.png", output);
+    imwrite("/home/vance/output/ms/被处理的区域.png", toShow);
+    //    imshow("points to smooth", toShow);
+    waitKey(10);
+    destroyAllWindows();
+#endif
+*/
+}
+
 
 Rect cvFeatherBlender::createWeightMaps(const std::vector<UMat>& masks,
                                         const std::vector<Point>& corners, std::vector<UMat>& weight_maps)
@@ -396,21 +613,6 @@ Rect cvFeatherBlender::createWeightMaps(const std::vector<UMat>& masks,
     }
 
     return dst_roi;
-}
-
-
-Mat cvFeatherBlender::getOverlappedEdgesMask(int size) const
-{
-    Mat res;
-
-    threshold(overlapped_edges_mask_, overlapped_edges_mask_, 255, 255, THRESH_TRUNC);
-    if (size > 1) {
-        const Mat kernel = getStructuringElement(MORPH_RECT, Size(size, size));
-        dilate(overlapped_edges_mask_, res, kernel);  // 膨胀
-    } else {
-        res = overlapped_edges_mask_.clone();
-    }
-    return res;
 }
 
 

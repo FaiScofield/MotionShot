@@ -46,3 +46,8 @@ target_link_libraries(test_shoter_static_lasiesta ${LIB_MotionShot})
 
 add_executable(test_shoter_static_huawei test_shoter_static_huawei.cpp)
 target_link_libraries(test_shoter_static_huawei ${LIB_MotionShot})
+
+
+
+#add_executable(test_overlappedAreaBlending test_overlappedAreaBlending.cpp)
+#target_link_libraries(test_overlappedAreaBlending ${LIB_MotionShot})

@@ -86,12 +86,16 @@ public:
      */
     virtual void blend(CV_IN_OUT InputOutputArray dst, CV_IN_OUT InputOutputArray dst_mask);
 
-    virtual cv::Mat getOverlappedEdgesMask(int size = 0) const { return overlapped_edges_mask_; }
+    /*virtual*/ cv::Mat getOverlappedEdges() const { return overlapped_edges_; }
+    /*virtual*/ cv::Mat getOverlappedEdgesMask(int size) const;
+    void setOverlappedEdgesMaskWidth(int w) { assert(w > 1); overlapped_edges_mask_width_ = w; }
 
 protected:
     UMat dst_, dst_mask_;
     Rect dst_roi_;
 
+    int overlapped_edges_mask_width_;
+    Mat overlapped_edges_;
     Mat overlapped_edges_mask_;
 };
 
@@ -122,7 +126,7 @@ public:
     Rect createWeightMaps(const std::vector<UMat>& masks, const std::vector<Point>& corners,
                           CV_IN_OUT std::vector<UMat>& weight_maps);
 
-    cv::Mat getOverlappedEdgesMask(int size = 0) const override;
+    void smoothEdgesOnOverlappedArea(const cv::Mat& src, const cv::Mat& mask, cv::Mat& dst, float scale);
 
 private:
     float sharpness_;

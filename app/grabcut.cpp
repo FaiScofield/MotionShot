@@ -306,7 +306,8 @@ int main(int argc, char** argv)
     INFO("Image size is " << image.size());
 
     const string winName = "image";
-    namedWindow(winName, WINDOW_AUTOSIZE);
+    namedWindow(winName, WINDOW_KEEPRATIO | WINDOW_NORMAL);
+    resizeWindow(winName, Size(1440, 1080));
     setMouseCallback(winName, on_mouse, 0);
 
     Mat imageScaled;

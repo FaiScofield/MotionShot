@@ -25,7 +25,7 @@ void namedLargeWindow(const std::string& title, bool flag)
 {
     if (flag) {
         namedWindow(title, WINDOW_KEEPRATIO | WINDOW_NORMAL);
-        resizeWindow(title, Size(1080, 810));
+        resizeWindow(title, Size(1440, 1080));
     } else {
         namedWindow(title, WINDOW_AUTOSIZE);
     }
@@ -687,7 +687,7 @@ void smoothMaskWeightEdge(const cv::Mat& src, cv::Mat& dst, int b1, int b2)
 
     Mat noWeightMask, weightArea, weightAreaValue, weightDistance;
     if (b1 >= 2 && b2 < 2) {  // 缩小
-        const Mat kernel1 = getStructuringElement(MORPH_ELLIPSE, Size(2 * b1, 2 * b1));
+        const Mat kernel1 = getStructuringElement(MORPH_ELLIPSE, Size(2 * b1 + 1, 2 * b1 + 1));
         erode(src, noWeightMask, kernel1);  // 先腐蚀得到不要过渡的区域
         weightArea = src - noWeightMask;    // 得到需要过渡的区域
         distanceTransform(src, weightDistance, DIST_C, 3);
@@ -696,7 +696,7 @@ void smoothMaskWeightEdge(const cv::Mat& src, cv::Mat& dst, int b1, int b2)
         normalize(weightAreaValue, weightAreaValue, 0, 255, NORM_MINMAX);  // 归一化
         add(noWeightMask, weightAreaValue, dst);  // 不过渡区域(保留权值为1) + 过渡权区域 = 目标掩模
     } else if (b1 < 2 && b2 >= 2) {  // 扩大
-        const Mat kernel2 = getStructuringElement(MORPH_RECT, Size(2 * b2, 2 * b2));
+        const Mat kernel2 = getStructuringElement(MORPH_RECT, Size(2 * b2 + 1, 2 * b2 + 1));
         dilate(src, noWeightMask, kernel2);
         weightArea = noWeightMask - src;
         distanceTransform(noWeightMask, weightDistance, DIST_C, 3);
@@ -707,8 +707,8 @@ void smoothMaskWeightEdge(const cv::Mat& src, cv::Mat& dst, int b1, int b2)
     } else {
         assert(b1 >= 2 && b2 >= 2);
 
-        const Mat kernel1 = getStructuringElement(MORPH_ELLIPSE, Size(2 * b1, 2 * b1));
-        const Mat kernel2 = getStructuringElement(MORPH_RECT, Size(2 * b2, 2 * b2));
+        const Mat kernel1 = getStructuringElement(MORPH_ELLIPSE, Size(2 * b1 + 1, 2 * b1 + 1));
+        const Mat kernel2 = getStructuringElement(MORPH_RECT, Size(2 * b2 + 1, 2 * b2 + 1));
 
         Mat tmp1, tmp2;
         erode(src, tmp1, kernel1);
@@ -824,16 +824,6 @@ void applyEdgeFilter(cv::Mat& img, int x, int y, int dir)
         vKernels[3] = (Mat_<float>(3, 3) << 0, 3, 10, 3, 0, 3, 10, 3, 0);
         vKernels[3] = vKernels[3] / sum(vKernels[3]);
     }
-//    if (vKernels.empty()) {
-//        vKernels.resize(4);
-//        vKernels[0] = (Mat_<float>(3, 3) << 1, 0, 1, 2, 0, 2, 1, 0, 1);
-//        vKernels[0] = vKernels[0] / sum(vKernels[0]);
-//        vKernels[1] = vKernels[0].t();
-//        vKernels[2] = (Mat_<float>(3, 3) << 2, 1, 0, 1, 0, 1, 0, 1, 2);
-//        vKernels[2] = vKernels[2] / sum(vKernels[2]);
-//        vKernels[3] = (Mat_<float>(3, 3) << 0, 1, 2, 1, 0, 1, 2, 1, 0);
-//        vKernels[3] = vKernels[3] / sum(vKernels[3]);
-//    }
 
     if (x - 1 < 0 || y - 1 < 0 || x + 1 >= img.cols || y + 1 >= img.rows)
         return;
@@ -888,15 +878,19 @@ void applyEdgeFilter(const cv::Mat& src, const cv::Mat& gradient, const cv::Mat&
             }
         }
     }
+    imwrite("/home/vance/output/ms/均值滤波前.png", dst);
 
     // 再做个最小值/均值滤波
+    Mat gap;
+    threshold(gradient, gap, 150, 255, THRESH_OTSU);
     for (int y = 1; y < dst.rows - 1; ++y) {
         const float* grad_row = grad.ptr<float>(y);
         const uchar* label_row = dirLabel.ptr<uchar>(y);
+        const uchar* gap_row = gap.ptr<uchar>(y);
         uchar* dst_row = dst.ptr<uchar>(y);
 
         for (int x = 1; x < dst.cols - 1; ++x) {
-            if (label_row[x] > 0 && grad_row[x] > 0.5) {
+            if (gap_row[x] > 0) {
                 const Mat& kernel = vKernels[4];
                 const Mat& neighbor = dst.rowRange(y - 1, y + 2).colRange(x - 1, x + 2);
                 Mat result;
@@ -905,6 +899,7 @@ void applyEdgeFilter(const cv::Mat& src, const cv::Mat& gradient, const cv::Mat&
             }
         }
     }
+    imwrite("/home/vance/output/ms/均值滤波后.png", dst);
 }
 
 /**
@@ -1020,6 +1015,11 @@ void overlappedEdgesSmoothing(const cv::Mat& src, const cv::Mat& mask, cv::Mat& 
     maxEdge_Full.convertTo(tmp1, CV_8UC1, 255);
     imwrite("/home/vance/output/ms/初始梯度最大值.png", tmp1);
     Mat toShow = src.clone();
+
+    // 白边区域
+    Mat finalEdgeTh;
+    threshold(finalEdge, finalEdgeTh, 150, 255, THRESH_OTSU);
+    imwrite("/home/vance/output/ms/重叠区域最大梯度otsu.png", finalEdgeTh);
 #endif
 
     // 3.应用边缘滤波
@@ -1071,27 +1071,27 @@ void overlappedEdgesSmoothing(const cv::Mat& src, const cv::Mat& mask, cv::Mat& 
     }
 #else
     // 先在低尺度上滤波一次, 然后上采样回原尺度加权融合
-//    vector<Mat> vDstScaledFilterd(3), vDstScaled(3);
-//    resize(dstChanels[0], vDstScaled[0], Size(), scale, scale);
-//    resize(dstChanels[1], vDstScaled[1], Size(), scale, scale);
-//    resize(dstChanels[2], vDstScaled[2], Size(), scale, scale);
-//    for (int i = 0; i < 3; ++i)
-//        applyEdgeFilter(vDstScaled[i], finalEdge, dstLabel, vDstScaledFilterd[i]);
+    vector<Mat> vDstScaledFilterd(3), vDstScaled(3);
+    resize(dstChanels[0], vDstScaled[0], Size(), scale, scale);
+    resize(dstChanels[1], vDstScaled[1], Size(), scale, scale);
+    resize(dstChanels[2], vDstScaled[2], Size(), scale, scale);
+    for (int i = 0; i < 3; ++i)
+        applyEdgeFilter(vDstScaled[i], finalEdge, dstLabel, vDstScaledFilterd[i]);
 
-//    Mat dstScaledFilterd, dstFilterdOnce;
-//    merge(vDstScaledFilterd, dstScaledFilterd);
-//    resize(dstScaledFilterd, dstFilterdOnce, src.size());
+    Mat dstScaledFilterd, dstFilterdOnce;
+    merge(vDstScaledFilterd, dstScaledFilterd);
+    resize(dstScaledFilterd, dstFilterdOnce, src.size());
 
-//    imwrite("/home/vance/output/ms/前景(scaled).png", srcScaled);
-//    imwrite("/home/vance/output/ms/前景(scaled)低尺度滤波.png", dstScaledFilterd);
-//    imwrite("/home/vance/output/ms/前景低尺度滤波.png", dstFilterdOnce);
+    imwrite("/home/vance/output/ms/前景(scaled).png", srcScaled);
+    imwrite("/home/vance/output/ms/前景(scaled)低尺度滤波.png", dstScaledFilterd);
+    imwrite("/home/vance/output/ms/前景低尺度滤波.png", dstFilterdOnce);
 
-//    dst = src.clone();
-//    dst.setTo(0, mask);
+    dst = src.clone();
+    dst.setTo(0, mask);
 
-//    bitwise_or(dst, dstFilterdOnce, dst, mask);
-//    imwrite("/home/vance/output/ms/前景低尺度滤波应用到原尺度.png", dst);
-//    split(dst, dstChanels);
+    bitwise_or(dst, dstFilterdOnce, dst, mask);
+    imwrite("/home/vance/output/ms/前景低尺度滤波应用到原尺度.png", dst);
+    split(dst, dstChanels);
 
     // 再到原尺度上滤波
     for (int y = 0; y < src.rows; ++y) {
@@ -1106,7 +1106,7 @@ void overlappedEdgesSmoothing(const cv::Mat& src, const cv::Mat& mask, cv::Mat& 
             if (x_scaled >= dstLabel.cols)
                 continue;
 
-            if (label_row[x_scaled] > 0 /*&& edge_row[x_scaled] > 50*/) {
+            if (label_row[x_scaled] > 0 && edge_row[x_scaled] > 10) {
                 applyEdgeFilter(dstChanels[0], x, y, label_row[x_scaled]);
                 applyEdgeFilter(dstChanels[1], x, y, label_row[x_scaled]);
                 applyEdgeFilter(dstChanels[2], x, y, label_row[x_scaled]);

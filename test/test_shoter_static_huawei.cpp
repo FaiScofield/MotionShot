@@ -95,8 +95,8 @@ int main(int argc, char* argv[])
             Mat gtGray = Mat::zeros(vImages[0].size(), CV_8UC1);
             vGTsMaskRect[i].copyTo(gtGray(vGTsRect[i]));
 
-            vector<vector<Point>> contours;
-            findContours(gtGray, contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+//            vector<vector<Point>> contours;
+//            findContours(gtGray, contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
 
 #define SHOW_MASK_INPUT 0
 #if     SHOW_MASK_INPUT
@@ -104,17 +104,17 @@ int main(int argc, char* argv[])
             cvtColor(gtGray, toShow, COLOR_GRAY2BGR);
             drawContours(toShow, contours, -1, Scalar(0,255,0));
 #endif
-            if (contours.size() > 1) {
-                int maxIdx = 0, maxArea = 0;
-                for (int j = 0, jend = contours.size(); j < jend; ++j) {
-                    Rect r = boundingRect(contours[j]);
-                    if (r.area() > maxArea) {
-                        maxIdx = j;
-                        maxArea = r.area();
-                    }
-                }
-                gtGray = Mat::zeros(gtGray.size(), CV_8UC1);
-                drawContours(gtGray, contours, maxIdx, Scalar(255), -1);
+//            if (contours.size() > 1) {
+//                int maxIdx = 0, maxArea = 0;
+//                for (int j = 0, jend = contours.size(); j < jend; ++j) {
+//                    Rect r = boundingRect(contours[j]);
+//                    if (r.area() > maxArea) {
+//                        maxIdx = j;
+//                        maxArea = r.area();
+//                    }
+//                }
+//                gtGray = Mat::zeros(gtGray.size(), CV_8UC1);
+//                drawContours(gtGray, contours, maxIdx, Scalar(255), -1);
 
 #if     SHOW_MASK_INPUT
                 rectangle(toShow, boundingRect(contours[maxIdx]), Scalar(0,0,255), 2);
@@ -122,9 +122,27 @@ int main(int argc, char* argv[])
                 imshow("前景掩模&轮廓", toShow);
                 waitKey(500);
 #endif
-            }
+//            }
             vGTsGray.push_back(gtGray);
+
+            //! test
+//            Mat fore, fore_YUV, backgroundMask;
+//            fore = vImages[i](vGTsRect[i]);
+//            bitwise_not(vGTsMaskRect[i], backgroundMask);
+//            fore.setTo(0, backgroundMask);
+//            imshow("前景", fore);
+
+//            vector<Mat> vForeChannels;
+//            cvtColor(fore, fore_YUV, COLOR_BGR2YUV);
+//            split(fore_YUV, vForeChannels);
+//            imshow("前景Y", vForeChannels[0]);
+//            imshow("前景U", vForeChannels[1]);
+//            imshow("前景V", vForeChannels[2]);
+
+//            waitKey(0);
+
         }
+//        exit(0);
 #elif GET_GROUNDTRUTH_FROM_FACEPP
         vector<Mat> vGTsMaskRect;
         vector<Rect> vGTsRect;
@@ -145,7 +163,7 @@ int main(int argc, char* argv[])
 
 //            Mat toShow;
 //            cvtColor(gtGray, toShow, COLOR_GRAY2BGR);
-//            drawContours(toShow, contours, -1, Scalar(0,255,0), 2);
+//            drawContours(toShow, contours, -1, Scalar(0,255,0), 1);
 //            imshow("mask input & contous", toShow);
 //            waitKey(300);
 
@@ -189,7 +207,7 @@ int main(int argc, char* argv[])
 
     // 1.3掩膜边缘平滑
     const Mat kernel1 = getStructuringElement(MORPH_RECT, Size(5, 5));
-    const Mat kernel2 = getStructuringElement(MORPH_ELLIPSE, Size(7, 7));
+    const Mat kernel2 = getStructuringElement(MORPH_ELLIPSE, Size(11, 11));
     const Mat kernel3 = getStructuringElement(MORPH_ELLIPSE, Size(9, 9));
     vForegroundMasks.reserve(N);
     for (int i = 0; i < N; ++i) {
@@ -260,8 +278,8 @@ int main(int argc, char* argv[])
     Mat allForegroundShow = allForeground.clone();
     vector<vector<Point>> contours;
     findContours(allForegroundMask, contours, RETR_LIST, CHAIN_APPROX_SIMPLE);
-    drawContours(allForegroundShow, contours, -1, Scalar(255,0,0), 2);  // 画前景轮廓
-    const Mat overlappedEdges = blender->getOverlappedEdgesMask(0);
+    drawContours(allForegroundShow, contours, -1, Scalar(255,0,0), 1);  // 画前景轮廓
+    const Mat overlappedEdges = blender->getOverlappedEdges();
     allForegroundShow.setTo(Scalar(0,255,0), overlappedEdges);  // 画重叠区域轮廓
 //    namedLargeWindow("所有前景轮廓(蓝)&重叠区域(绿)", IS_LARGE_IMAGE_SIZE);
 //    imshow("所有前景轮廓(蓝)&重叠区域(绿)", allForegroundShow);
@@ -278,7 +296,7 @@ int main(int argc, char* argv[])
     timer.start();
 
     // 3.前景拼接结果改善(边缘滤波)
-    Mat overlappedEdgesMask = blender->getOverlappedEdgesMask(15);
+    Mat overlappedEdgesMask = blender->getOverlappedEdgesMask(3);
     bitwise_and(overlappedEdgesMask, allForegroundMask, overlappedEdgesMask);// 扣掉前景轮廓外那部分的待平滑区域
     Mat foregroundFiltered, foregroundFiltered_S;
     overlappedEdgesSmoothing(allForeground, overlappedEdgesMask, foregroundFiltered, 0.5);

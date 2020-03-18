@@ -175,7 +175,7 @@ int main(int argc, char* argv[])
     vector<int> params{/*IMWRITE_JPEG_QUALITY*/IMWRITE_PNG_COMPRESSION};
     if (mark) {
         const string winName = "Image Sequence";
-        namedWindow(winName, WINDOW_KEEPRATIO);
+        namedLargeWindow(winName);
 //        namedWindow(winName, WINDOW_AUTOSIZE);
 
         string outConfigFile = str_output + "/rect_param.txt";

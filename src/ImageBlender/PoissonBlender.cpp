@@ -25,6 +25,7 @@ void PoissonBlender::feed(cv::InputArray src, cv::InputArray mask, cv::Point cen
 
 void PoissonBlender::blend(cv::InputOutputArray dst, cv::InputOutputArray dst_mask)
 {
+
     cv::seamlessClone(src_, dst, dst_mask, roi_center_, dst, cv::NORMAL_CLONE);
 }
 
