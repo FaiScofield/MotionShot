@@ -22,6 +22,9 @@ enum BlenderType { NO, FEATHER, MULTI_BAND };
 
 bool IS_LARGE_IMAGE_SIZE = true;
 
+void getGradient(const Mat& src, const Mat& mask, Mat& gradient);
+void maskCoarse2Fine(const vector<Mat>& srcs, vector<Mat>& masks);
+
 int main(int argc, char* argv[])
 {
     /// parse input arguments
@@ -251,6 +254,9 @@ int main(int argc, char* argv[])
 //    exit(0);
     timer.start();
 
+    maskCoarse2Fine(vImages, vForegroundMasks);
+    exit(0);
+
     // 2.前景拼接融合
     const Mat pano = vImages.front().clone();
     const Rect disRoi(0, 0, pano.cols, pano.rows);
@@ -299,7 +305,7 @@ int main(int argc, char* argv[])
     Mat overlappedEdgesMask = blender->getOverlappedEdgesMask(3);
     bitwise_and(overlappedEdgesMask, allForegroundMask, overlappedEdgesMask);// 扣掉前景轮廓外那部分的待平滑区域
     Mat foregroundFiltered, foregroundFiltered_S;
-    overlappedEdgesSmoothing(allForeground, overlappedEdgesMask, foregroundFiltered, 0.5);
+    overlappedEdgesSmoothing(allForeground, overlappedEdgesMask, foregroundFiltered, 0.25);
     foregroundFiltered.convertTo(foregroundFiltered_S, CV_16SC3);
 
     timer.stop();
@@ -347,4 +353,157 @@ int main(int argc, char* argv[])
 
     waitKey(10);
     return 0;
+}
+
+
+void maskCoarse2Fine(const vector<Mat>& srcs, vector<Mat>& masks)
+{
+    const size_t N = srcs.size();
+//    for (size_t i = 0; i < N; ++i) {
+//        const Mat& img = srcs[i];
+//        const Mat& mask = masks[i];
+//        const Rect rec = boundingRect(masks[i]);
+
+        const Mat& img = srcs.back();
+        const Mat& mask = masks.back();
+        const Rect rec = boundingRect(mask);
+
+        // 计算梯度
+        Mat edge, ignoreArea, gradientMask;
+        const Mat kernel = getStructuringElement(MORPH_RECT, Size(21, 21));
+        morphologyEx(mask, edge, MORPH_GRADIENT, Mat());
+        erode(mask, ignoreArea, kernel);
+//        bitwise_and(mask, 0, gradientMask, ignoreArea);
+        gradientMask = mask - ignoreArea;
+        imwrite("/home/vance/output/1待计算梯度的区域.png", gradientMask);
+
+        Mat gradient;
+        getGradient(img, gradientMask, gradient);
+
+        Mat keepArea1, keepArea2, keepArea3;
+        dilate(ignoreArea, keepArea1, Mat(), Point(-1, -1), 3);
+        dilate(keepArea1, keepArea2, Mat(), Point(-1, -1), 2);
+        dilate(keepArea2, keepArea3, Mat(), Point(-1, -1), 2);
+
+        Mat keepGradient1, keepGradient2, keepGradient3, keepGradientFore;
+        Mat toShow0, toShow1, toShow2, toShow3;
+        img.copyTo(toShow0, mask);
+        img.copyTo(toShow1, mask);
+        img.copyTo(toShow2, mask);
+//        img.copyTo(toShow3, mask);
+        bitwise_and(gradient, keepArea1, keepGradient1);
+        bitwise_and(gradient, keepArea2, keepGradient2);
+        bitwise_and(gradient, keepArea3, keepGradient3);
+        bitwise_and(gradient, mask, keepGradientFore);
+        imwrite("/home/vance/output/2前景梯度.png", keepGradientFore );
+        imwrite("/home/vance/output/2可能的白边梯度区域1.png", keepGradient1);
+        imwrite("/home/vance/output/2可能的白边梯度区域2.png", keepGradient2);
+        imwrite("/home/vance/output/2可能的白边梯度区域3.png", keepGradient3);
+
+//        normalize(keepGradient1, keepGradient1, 0, 255, NORM_MINMAX);
+//        normalize(keepGradient2, keepGradient2, 0, 255, NORM_MINMAX);
+//        normalize(keepGradient3, keepGradient3, 0, 255, NORM_MINMAX);
+        threshold(keepGradient1, keepGradient1, 150, 255, THRESH_BINARY);
+        threshold(keepGradient2, keepGradient2, 150, 255, THRESH_BINARY);
+        threshold(keepGradient3, keepGradient3, 150, 255, THRESH_BINARY);
+        toShow0.setTo(Scalar(0,255,255), gradient);
+//        toShow1.setTo(Scalar(255,0,0), keepGradient1);
+//        toShow2.setTo(Scalar(0,255,0), keepGradient2);
+//        toShow3.setTo(Scalar(0,0,255), keepGradient3);
+        imwrite("/home/vance/output/人物梯度(原始).png", toShow0);
+
+
+        Mat gradientFilter1, gradientFilter2;
+        const Mat smoothKernel = getStructuringElement(MORPH_RECT, Size(7, 7));
+        morphologyEx(gradient, gradientFilter1, MORPH_CLOSE, Mat(), Point(-1, -1), 1);
+        morphologyEx(gradient, gradientFilter2, MORPH_OPEN, Mat(), Point(-1, -1), 1);
+        morphologyEx(gradientFilter2, gradientFilter2, MORPH_CLOSE, Mat(), Point(-1, -1), 1);
+        toShow1.setTo(Scalar(0,255,255), gradientFilter1);
+        toShow2.setTo(Scalar(0,255,255), gradientFilter2);
+
+        Mat fore;
+        bitwise_and(img, 255, fore,  mask);
+        imwrite("/home/vance/output/人物前景.png", fore);
+
+        vector<vector<Point>> contours;
+        gradientFilter2.convertTo(gradientFilter2, CV_32SC1);
+        findContours(gradientFilter2, contours, RETR_FLOODFILL, CHAIN_APPROX_SIMPLE);
+        drawContours(toShow2, contours, -1, Scalar(0,255,0));
+
+        imwrite("/home/vance/output/人物梯度(关操作).png", toShow1);
+        imwrite("/home/vance/output/人物梯度(开操作).png", toShow2);
+
+        Mat maskCut(mask.size(), mask.type());
+        maskCut.setTo(0);
+        drawContours(maskCut, contours, -1, Scalar::all(255), -1);
+        bitwise_and(mask, maskCut, maskCut);
+
+        bitwise_and(img, 255, toShow3, maskCut);
+        imwrite("/home/vance/output/人物前景(去白边).png", toShow3);
+
+        // 计算重叠区域
+//        Mat overlappedArea, ignoreArea, edge;
+//        bitwise_and(mask1, 255, overlappedArea, mask2);         // 得到重叠区域
+//        if (countNonZero(overlappedArea) > 100)
+//        morphologyEx(overlappedArea, edge, MORPH_GRADIENT, Mat());  // 得到重叠区域边缘
+
+//    }
+}
+
+void getGradient(const Mat &src, const Mat &mask, Mat &gradient)
+{
+    Mat srcGray;
+    cvtColor(src, srcGray, COLOR_BGR2GRAY);
+
+    static vector<Mat> vKernels;
+    if (vKernels.empty()) {
+        vKernels.resize(4);
+        vKernels[0] = (Mat_<char>(3, 3) << -3, 0, 3, -10, 0, 10, -3, 0, 3);
+        vKernels[1] = vKernels[0].t();
+        vKernels[2] = (Mat_<char>(3, 3) << -10, -3, 0, -3, 0, 3, 0, 3, 10);
+        vKernels[3] = (Mat_<char>(3, 3) << 0, 3, 10, -3, 0, 3, -10, -3, 0);
+    }
+
+    // 1.下采样并在Y域上求解4个方向的梯度
+//    resize(src, src_L1, Size(), scale, scale);
+//    resize(mask, mask_L1, Size(), scale, scale);
+//    resize(srcGray, srcGray_L1, Size(), scale, scale);
+    vector<Mat> vGradient(4);   // CV_32FC1
+    for (int i = 0; i < 4; ++i)
+        filter2D(srcGray, vGradient[i], CV_32FC1, vKernels[i], Point(-1, -1), 0, BORDER_REPLICATE);
+
+    // 2.对掩模对应的区域的梯度, 选出4个方向中的最大者并标记最大梯度方向
+    Mat maxGradientEdge = Mat::zeros(srcGray.size(), CV_32FC1);
+    Mat dirLabel = Mat::zeros(srcGray.size(), CV_8UC1);   // 掩模区内边缘的方向
+    for (int y = 0; y < srcGray.rows; ++y) {
+        const char* mask_row = mask.ptr<char>(y);
+        float* grad_row = maxGradientEdge.ptr<float>(y);
+        char* label_row = dirLabel.ptr<char>(y);
+
+        for (int x = 0; x < srcGray.cols; ++x) {
+            if (mask_row[x] != 0) {
+                int label = 0;  // 默认无梯度则黑色
+                float maxGradient = 0.f;
+                for (int i = 0; i < 4; ++i) {
+                    const float g = abs(vGradient[i].at<float>(y, x)); // 绝对值符号使正负方向为同一方向
+                    if (g > maxGradient) {
+                        maxGradient = g;
+                        label = i + 1;
+                    }
+                }
+                grad_row[x] = maxGradient;
+                label_row[x] = label;
+            }
+        }
+    }
+    normalize(maxGradientEdge, maxGradientEdge, 0.f, 1.f, NORM_MINMAX);  // 归一化
+    Mat maxGradient_L1;
+    maxGradientEdge.convertTo(maxGradient_L1, CV_8UC1, 255);
+    threshold(maxGradient_L1, gradient, 10, 0, THRESH_TOZERO);  // 太小的梯度归0
+
+    // 大梯度的白边区域
+    Mat largeGradienMask_L1;
+    threshold(maxGradient_L1, largeGradienMask_L1, 150, 255, THRESH_OTSU);
+
+    imwrite("/home/vance/output/人物梯度.png", gradient);
 }

@@ -211,13 +211,13 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
         bitwise_and(gapMask, 0, gapMask, maksEroded);
         overlapped_edges_mask_ += gapMask;
 
-        Mat imgU, gap, weightMap_U;
-        img.convertTo(imgU, CV_8UC3);
-        weight_map.convertTo(weightMap_U, CV_8UC1);
-        imwrite("/home/vance/output/ms/去除gap前.png", weightMap_U);
-        smoothEdgesOnOverlappedArea(imgU, gapMask, gap, 0.5); //! TODO
-        bitwise_and(weightMap_U, 0, weightMap_U, gap);
-        imwrite("/home/vance/output/ms/去除gap后.png", weightMap_U);
+//        Mat imgU, gap, weightMap_U;
+//        img.convertTo(imgU, CV_8UC3);
+//        weight_map.convertTo(weightMap_U, CV_8UC1);
+//        imwrite("/home/vance/output/ms/去除gap前.png", weightMap_U);
+//        smoothEdgesOnOverlappedArea(imgU, gapMask, gap, 0.5); //! TODO
+//        bitwise_and(weightMap_U, 0, weightMap_U, gap);
+//        imwrite("/home/vance/output/ms/去除gap后.png", weightMap_U);
 
 //        namedLargeWindow("重叠区域边缘(考虑覆盖)", largeWin);
 //        imshow("重叠区域边缘(考虑覆盖)", overlapped_edges_);
