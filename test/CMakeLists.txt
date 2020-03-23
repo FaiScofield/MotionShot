@@ -51,3 +51,7 @@ target_link_libraries(test_shoter_static_huawei ${LIB_MotionShot})
 
 #add_executable(test_overlappedAreaBlending test_overlappedAreaBlending.cpp)
 #target_link_libraries(test_overlappedAreaBlending ${LIB_MotionShot})
+
+
+add_executable(test_aip_bodyseg test_aip_bodyseg.cpp)
+target_link_libraries(test_aip_bodyseg ${LIB_MotionShot} ${JSONCPP_LIBRARIES} -lssl -lcrypto -lcurl)

@@ -17,7 +17,8 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/videoio/videoio.hpp>
 
-#define WATERSHED 1
+#define WATERSHED 0
+#define USE_MEDIAN_FILTER_BACKGROUND    1
 
 using namespace cv;
 using namespace std;
@@ -27,16 +28,16 @@ int main(int argc, char* argv[])
 {
     /// parse input arguments
     CommandLineParser parser(argc, argv,
-               "{type      t|VIDEO|value input type: VIDEO, LASSESTA, HUAWEI}"
-               "{folder    f| |data folder or video file for type LASSESTA/HUAWEI/VIDEO}"
-               "{detector  d|fd|value detector: bgd, fd, mog2, vibe, vibe+, flow}"
-               "{size      s|5|board size for fd detector}"
-               "{showGT    g|false|if show ground for type DATASET}"
-               "{scale     c|1|scale to resize image, 0.15 for type HUAWEI}"
-               "{flip      p|0|flip image for type VIDEO, 0(x), +(y), -(xy)}"
-               "{rotate    r|-1|rotate image for type VIDEO, r = cv::RotateFlags(0, 1, 2)}"
-               "{write     w|false|write result sequence to a dideo}"
-               "{help      h|false|show help message}");
+            "{type      t|VIDEO|value input type: VIDEO, LASSESTA, HUAWEI}"
+            "{folder    f| |data folder or video file for type LASSESTA/HUAWEI/VIDEO}"
+            "{detector  d|fd|value detector: bgd, fd, mog2, vibe, vibe+, flow}"
+            "{size      s|5|board size for fd detector}"
+            "{scale     c|1|scale to resize image, 0.15 for type HUAWEI}"
+            "{suffix    x|jpg|image suffix for SEQUENCE}"
+            "{begin     a|0|start index for image sequence}"
+            "{end       e|-1|end index for image sequence}"
+            "{write     w|false|write result sequence to a dideo}"
+            "{help      h|false|show help message}");
 
     if (argc < 2 || parser.get<bool>("help")) {
         parser.printMessage();
@@ -49,27 +50,38 @@ int main(int argc, char* argv[])
     if ((*str_folder.end()) == '/')
         str_folder = str_folder.substr(0, str_folder.size() - 1);
     double scale = parser.get<double>("scale");
-    int flip = parser.get<int>("flip");
-    int rotate = parser.get<int>("rotate");
-    bool showGT = parser.get<bool>("showGT");
+    int beginIdx = parser.get<int>("begin");
+    int endIdx = parser.get<int>("end");
     cout << " - type = " << str_type << endl;
     cout << " - folder = " << str_folder << endl;
     cout << " - detector = " << str_detector << endl;
 
+    vector<Mat> vImages, vGTs;
     InputType inputType;
     if (str_type == "video" || str_type == "VIDEO") {
         inputType = VIDEO;
-        showGT = false;
+        scale = 0.3;
+        ReadImageSequence_video(str_folder, vImages, beginIdx, endIdx);
     } else if (str_type == "lasiesta" || str_type == "LASSESTA") {
         inputType = LASIESTA;
-        cout << " - showGT = " << showGT << endl;
+        scale = 1;
+        ReadImageSequence_lasiesta(str_folder, vImages, vGTs, beginIdx, endIdx);
     } else if (str_type == "huawei" || str_type == "HUAWEI") {
         inputType = HUAWEI;
-        showGT = false;
+        scale = 0.1;
+        ReadImageSequence_huawei(str_folder, vImages, beginIdx, endIdx);
+    } else if (str_type == "sequence" || str_type == "SEQUENCE") {
+        inputType = SEQUENCE;
+        scale = 0.5;
+        String suffix = parser.get<String>("suffix");
+        ReadImageSequence(str_folder, suffix, vImages, beginIdx, endIdx);
     } else {
-        cerr << "[Error] Unknown input type for " << str_type << endl;
+        ERROR("[Error] Unknown input type for " << str_type);
         return -1;
     }
+    cout << " - Image size input = " << vImages[0].size() << endl;
+    resizeFlipRotateImages(vImages, scale);
+
 
     BaseMotionDetector* detector;
     if (str_detector == "bgd") {
@@ -79,7 +91,7 @@ int main(int argc, char* argv[])
         int size = parser.get<int>("size");
         cout << " - kernel size = " << size << endl;
         assert(size > 2);
-        detector = dynamic_cast<BaseMotionDetector*>(new FramesDifference(2, size));
+        detector = dynamic_cast<BaseMotionDetector*>(new FramesDifference(2, size, 10));
     } else if (str_detector == "mog2") {
         Ptr<BackgroundSubtractorMOG2> bs = createBackgroundSubtractorMOG2(500, 100.0, true);
         detector = dynamic_cast<BaseMotionDetector*>(new BS_MOG2_CV(bs.get()));
@@ -94,22 +106,42 @@ int main(int argc, char* argv[])
         detector = dynamic_cast<BaseMotionDetector*>(new ViBePlus(20, 2, 20, 16));
     }*/
     else {
-        cerr << "[Error] Unknown input detector for " << str_detector << endl;
+        ERROR("Unknown input detector for " << str_detector);
         return -1;
     }
 
-    //// read images
-    vector<Mat> vImages, vGTs;
-    if (inputType == LASIESTA) {
-        ReadImageSequence_lasiesta(str_folder, vImages, vGTs);
-    } else if (inputType == HUAWEI) {
-        ReadImageSequence_huawei(str_folder, vImages);
-         scale = 0.15;
-    } else if (inputType == VIDEO) {
-        ReadImagesFromVideo(str_folder, vImages);
-        scale = 0.4;
+#if USE_MEDIAN_FILTER_BACKGROUND
+    // 把所有输入图像做一个中值滤波, 获得一个不变的背景
+    const size_t N = vImages.size();
+    Mat medianPano = Mat::zeros(vImages[0].size(), CV_8UC3);
+    vector<Mat> vImgs_Y(N); // 每副图像的Y域分量
+    for (size_t i = 0; i < N; ++i) {
+        Mat imgYUV;
+        cvtColor(vImages[i], imgYUV, COLOR_BGR2YUV);
+        vector<Mat> channels;
+        split(imgYUV, channels);
+        vImgs_Y[i] = channels[0];
     }
-    resizeFlipRotateImages(vImages, scale, flip, rotate);
+
+    // 中值滤波
+    for (int y = 0; y < vImages[0].rows; ++y) {
+        Vec3b* imgRow = medianPano.ptr<Vec3b>(y);
+
+        for(int x = 0; x < vImages[0].cols; ++x) {
+            vector<pair<uchar, uchar>> vLumarAndIndex;
+            for (size_t i = 0; i < N; ++i)
+                vLumarAndIndex.emplace_back(vImgs_Y[i].at<uchar>(y, x), i);
+
+            sort(vLumarAndIndex.begin(), vLumarAndIndex.end()); // 根据亮度中值决定此像素的值由哪张图像提供
+            uchar idx = vLumarAndIndex[N/2].second;
+            imgRow[x] = vImages[idx].at<Vec3b>(y, x);
+        }
+    }
+    imwrite("/home/vance/output/ms/fixBackground(medianBlur).jpg", medianPano);
+    detector->setFixedBackground(true);
+    Mat tmpMask;
+    detector->apply(medianPano, tmpMask);   // 喂第一帧
+#endif
 
     /// detect moving frontground
     const bool write = parser.get<bool>("write");
@@ -122,6 +154,8 @@ int main(int argc, char* argv[])
         detector->apply(frame, diff);
         if (diff.empty())
             continue;
+        namedLargeWindow("mask");
+        imshow("mask", diff);
 
         // find contours
         Mat frame_contours = frame.clone();
@@ -181,8 +215,8 @@ int main(int argc, char* argv[])
         int maxArea = 0;
         for (int i = 0, iend = contours.size(); i < iend; ++i) {
             Rect blobi = boundingRect(contours[i]);
-            //            if (blobi.area() < 10000)
-            //                continue;
+            if (blobi.area() < 5000)
+                continue;
             if (blobi.area() > maxArea)
                 maxArea = blobi.area();
             blobs.push_back(blobi);
@@ -202,11 +236,9 @@ int main(int argc, char* argv[])
         }
 
         vconcat(frame_contours, diff_blobs, tmp);
-        if (showGT && !vGTs.empty())
-            vconcat(tmp, vGTs[i], output);
-        else
-            output = tmp;
+        output = tmp;
 
+        namedLargeWindow("result");
         imshow("result", output);
         if (write)
             writer.write(output);

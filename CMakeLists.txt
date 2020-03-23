@@ -82,7 +82,7 @@ target_link_libraries(${PROJECT_NAME}
 )
 set(LIB_MotionShot ${PROJECT_NAME})
 
-#add_subdirectory(Thirdparty/aip-cpp-sdk-0.8.5)
+add_subdirectory(Thirdparty/aip-cpp-sdk-0.8.5)
 add_subdirectory(src)
 add_subdirectory(test)
 add_subdirectory(app)

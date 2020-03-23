@@ -10,7 +10,7 @@ namespace ms
 class BaseMotionDetector
 {
 public:
-    BaseMotionDetector() : _isFirstFrame(true), _structureSize(5) {}
+    BaseMotionDetector() : _isFirstFrame(true), _isFixedBackground(false), _structureSize(5) {}
     virtual ~BaseMotionDetector() {}
 
     // virtual void init();
@@ -19,6 +19,8 @@ public:
     inline int structureSize() const { return _structureSize; }
     inline void setFirstFrameFlag(bool flag) { _isFirstFrame = flag; }
     inline bool isFirstFrame() const { return _isFirstFrame; }
+    inline void setFixedBackground(bool flag) { _isFixedBackground = flag; }
+    inline bool isFixedBackground() const { return _isFixedBackground; }
 
     void filterMask(cv::Mat& mask, int size = 0);
 
@@ -26,6 +28,7 @@ public:
 
 private:
     bool _isFirstFrame;
+    bool _isFixedBackground;
     int  _structureSize;
 };
 

@@ -227,10 +227,13 @@ void ReadImageSequence(const string& prefix, const string& suffix, vector<Mat>& 
     for (int i = startIndex, iend = startIndex + num; i < iend; ++i) {
         const string imgName = pre + to_string(i) + suf;
         Mat img = imread(imgName, IMREAD_COLOR);
-        if (img.empty())
-            cerr << "[Error] No image name " << imgName << endl;
-        else
+        if (img.empty()) {
+            WARNING("Image doesn't exist! (" << imgName << ")");
+            if (!imgs.empty())
+                break;
+        } else {
             imgs.push_back(img);
+        }
     }
 
     cout << "[Info ] Read " << imgs.size() << " images in the sequence of the foler " << prefix << endl;
@@ -807,36 +810,57 @@ void getArrowPoints(const Point& p, Point& s, Point& e, int dir)
  * @param x     边缘点横坐标
  * @param y     边缘点纵坐标
  * @param dir   边缘点梯度方向, (0, 4]分别表示: - | \ /
+ * @param size  滤波核的尺寸大小3/5
  */
-void applyEdgeFilter(cv::Mat& img, int x, int y, int dir)
+void applyEdgeFilter(Mat& src, int x, int y, int dir, int size = 3)
 {
-    assert(img.type() == CV_8UC1);  // 8UC1
+    assert(src.type() == CV_8UC1);
     assert(dir > 0 && dir < 5);
+    assert(size == 3 || size == 5);
 
     static vector<Mat> vKernels;
     if (vKernels.empty()) {
         vKernels.resize(4);
-        vKernels[0] = (Mat_<float>(3, 3) << 3, 0, 3, 10, 0, 10, 3, 0, 3);
+        if (size == 3) {
+            vKernels[0] = (Mat_<float>(3, 3) << 3, 0, 3, 10, 0, 10, 3, 0, 3);
+            vKernels[2] = (Mat_<float>(3, 3) << 10, 3, 0, 3, 0, 3, 0, 3, 10);
+            vKernels[3] = (Mat_<float>(3, 3) << 0, 3, 10, 3, 0, 3, 10, 3, 0);
+        } else {
+            vKernels[0] = (Mat_<float>(5, 5) << 1, 2, 0, 2, 1,  3, 5, 0, 5, 3,  7, 15, 0, 15, 7,
+                                                3, 5, 0, 5, 3,  1, 2, 0, 2, 1);
+            vKernels[2] = (Mat_<float>(5, 5) << 7, 3, 2, 1, 0,  3, 15, 5, 0, 1,  2, 5, 0, 5, 2,
+                                                1, 0, 5, 15, 3,  0, 1, 2, 3, 7);
+            vKernels[3] = (Mat_<float>(5, 5) << 0, 1, 2, 3, 7,  1, 0, 5, 15, 3,  2, 5, 0, 5, 2,
+                                                3, 15, 5, 0, 1,  7, 3, 2, 1, 0);
+        }
         vKernels[0] = vKernels[0] / sum(vKernels[0]);
         vKernels[1] = vKernels[0].t();
-        vKernels[2] = (Mat_<float>(3, 3) << 10, 3, 0, 3, 0, 3, 0, 3, 10);
         vKernels[2] = vKernels[2] / sum(vKernels[2]);
-        vKernels[3] = (Mat_<float>(3, 3) << 0, 3, 10, 3, 0, 3, 10, 3, 0);
         vKernels[3] = vKernels[3] / sum(vKernels[3]);
     }
 
-    if (x - 1 < 0 || y - 1 < 0 || x + 1 >= img.cols || y + 1 >= img.rows)
-        return;
-
     const Mat& kernel = vKernels[dir - 1];
-    const Mat& neighbor = img.rowRange(y - 1, y + 2).colRange(x - 1, x + 2);
+    Mat neighbor;
+    if (size == 3) {
+        if (x - 1 < 0 || y - 1 < 0 || x + 1 >= src.cols || y + 1 >= src.rows) {
+            WARNING("Pixel (" << x << ", " << y << ") on the border, skip it in the Edge Filter.");
+            return;
+        }
+        neighbor = src.rowRange(y - 1, y + 2).colRange(x - 1, x + 2);
+    } else {
+        if (x - 2 < 0 || y - 2 < 0 || x + 2 >= src.cols || y + 2 >= src.rows) {
+            WARNING("Pixel (" << x << ", " << y << ") on the border, skip it in the Edge Filter.");
+            return;
+        }
+        neighbor = src.rowRange(y - 2, y + 3).colRange(x - 2, x + 3);
+    }
 
     Mat result;
     multiply(neighbor, kernel, result, 1, CV_32FC1);
-    img.at<uchar>(y, x) = static_cast<uchar>(sum(result)[0]);
+    src.at<uchar>(y, x) = static_cast<uchar>(sum(result)[0]);
 }
 
-void applyEdgeFilter(const cv::Mat& src, const cv::Mat& gradient, const cv::Mat& dirLabel, cv::Mat& dst)
+void applyEdgeFilter(const Mat& src, const Mat& gradient, const Mat& dirLabel, Mat& dst, int size = 3)
 {
     assert(src.type() == CV_8UC1);
     assert(dirLabel.type() == CV_8UC1);
@@ -847,14 +871,24 @@ void applyEdgeFilter(const cv::Mat& src, const cv::Mat& gradient, const cv::Mat&
     static vector<Mat> vKernels;
     if (vKernels.empty()) {
         vKernels.resize(5);
-        vKernels[0] = (Mat_<float>(3, 3) << 3, 0, 3, 10, 0, 10, 3, 0, 3);
+        if (size == 3) {
+            vKernels[0] = (Mat_<float>(3, 3) << 3, 0, 3, 10, 0, 10, 3, 0, 3);
+            vKernels[2] = (Mat_<float>(3, 3) << 10, 3, 0, 3, 0, 3, 0, 3, 10);
+            vKernels[3] = (Mat_<float>(3, 3) << 0, 3, 10, 3, 0, 3, 10, 3, 0);
+            vKernels[4] = Mat::ones(3, 3, CV_32FC1);
+        } else {
+            vKernels[0] = (Mat_<float>(5, 5) << 1, 2, 0, 2, 1,  3, 5, 0, 5, 3,  7, 15, 0, 15, 7,
+                                                3, 5, 0, 5, 3,  1, 2, 0, 2, 1);
+            vKernels[2] = (Mat_<float>(5, 5) << 7, 3, 2, 1, 0,  3, 15, 5, 0, 1,  2, 5, 0, 5, 2,
+                                                1, 0, 5, 15, 3,  0, 1, 2, 3, 7);
+            vKernels[3] = (Mat_<float>(5, 5) << 0, 1, 2, 3, 7,  1, 0, 5, 15, 3,  2, 5, 0, 5, 2,
+                                                3, 15, 5, 0, 1,  7, 3, 2, 1, 0);
+            vKernels[4] = Mat::ones(5, 5, CV_32FC1);
+        }
         vKernels[0] = vKernels[0] / sum(vKernels[0]);
         vKernels[1] = vKernels[0].t();
-        vKernels[2] = (Mat_<float>(3, 3) << 10, 3, 0, 3, 0, 3, 0, 3, 10);
         vKernels[2] = vKernels[2] / sum(vKernels[2]);
-        vKernels[3] = (Mat_<float>(3, 3) << 0, 3, 10, 3, 0, 3, 10, 3, 0);
         vKernels[3] = vKernels[3] / sum(vKernels[3]);
-        vKernels[4] = (Mat_<float>(3, 3) << 1, 1, 1, 1, 1, 1, 1, 1, 1);
         vKernels[4] = vKernels[4] / sum(vKernels[4]);
     }
 
@@ -871,8 +905,20 @@ void applyEdgeFilter(const cv::Mat& src, const cv::Mat& gradient, const cv::Mat&
         for (int x = 1; x < src.cols - 1; ++x) {
             if (label_row[x] > 0/* && grad_row[x] > 0.01*/) {
                 const Mat& kernel = vKernels[label_row[x] - 1];
-                const Mat& neighbor = src.rowRange(y - 1, y + 2).colRange(x - 1, x + 2);
-                Mat result;
+                Mat neighbor, result;
+                if (size == 3) {
+                    if (x - 1 < 0 || y - 1 < 0 || x + 1 >= src.cols || y + 1 >= src.rows) {
+                        WARNING("Pixel (" << x << ", " << y << ") on the border, skip it in the Edge Filter.");
+                        continue;
+                    }
+                    neighbor = src.rowRange(y - 1, y + 2).colRange(x - 1, x + 2);
+                } else {
+                    if (x - 2 < 0 || y - 2 < 0 || x + 2 >= src.cols || y + 2 >= src.rows) {
+                        WARNING("Pixel (" << x << ", " << y << ") on the border, skip it in the Edge Filter.");
+                        continue;
+                    }
+                    neighbor = src.rowRange(y - 2, y + 3).colRange(x - 2, x + 3);
+                }
                 multiply(neighbor, kernel, result, 1, CV_32FC1);
                 dst_row[x] = static_cast<uchar>(sum(result)[0]);
             }
@@ -880,7 +926,7 @@ void applyEdgeFilter(const cv::Mat& src, const cv::Mat& gradient, const cv::Mat&
     }
 }
 
-void applyEdgeFilterDown(const cv::Mat& src, const cv::Mat& gradient, const cv::Mat& dirLabel, cv::Mat& dst, double scale)
+void applyEdgeFilterDown(const Mat& src, const Mat& gradient, const Mat& dirLabel, Mat& dst, double scale)
 {
     assert(src.type() == CV_8UC1);
     assert(dirLabel.type() == CV_8UC1);
@@ -1155,12 +1201,12 @@ void overlappedEdgesSmoothing(const cv::Mat& src, const cv::Mat& mask, cv::Mat& 
 //    dst += toAdd;
 ////////////////////////////////////////////////////
 
-//    vector<Point> vPointsToSmooth;
-//    vector<int> vDirsToSmooth;
-//    vPointsToSmooth.reserve(10000);
-//    vDirsToSmooth.reserve(10000);
+    vector<Point> vPointsToSmooth;
+    vector<int> vDirsToSmooth;
+    vPointsToSmooth.reserve(10000);
+    vDirsToSmooth.reserve(10000);
 
-//    // 在低尺度上滤波一次, 然后上采样回原尺度加权融合
+    // 在低尺度上滤波一次, 然后上采样回原尺度加权融合
 //    vector<Mat> vDstScaledFilterd(3), vDst_L1(3);
 //    resize(dstChanels[0], vDst_L1[0], Size(), scale, scale);
 //    resize(dstChanels[1], vDst_L1[1], Size(), scale, scale);
@@ -1176,41 +1222,42 @@ void overlappedEdgesSmoothing(const cv::Mat& src, const cv::Mat& mask, cv::Mat& 
 //    imwrite("/home/vance/output/ms/前景(L1)低尺度滤波后.png", dstScaledFilterd);
 //    imwrite("/home/vance/output/ms/前景低尺度滤波.png", dstFilterdOnce);
 
-//    dst = src.clone();
+    vector<Mat> dstChanels;
+    dst = src.clone();
 //    dst.setTo(0, mask);
 
 //    bitwise_or(dst, dstFilterdOnce, dst, mask);
 //    imwrite("/home/vance/output/ms/前景低尺度滤波应用到原尺度.png", dst);
-//    split(dst, dstChanels);
+    split(dst, dstChanels);
 
-//    // 再到原尺度上滤波
-//    for (int y = 0; y < src.rows; ++y) {
-//        const int y_scaled = cvRound(y * scale);
-//        if (y_scaled >= dirLabel_L1.rows)
-//            continue;
+    // 再到原尺度上滤波
+    for (int y = 0; y < src.rows; ++y) {
+        const int y_scaled = cvRound(y * scale);
+        if (y_scaled >= dirLabel_L1.rows)
+            continue;
 
-//        const uchar* edge_row = maxGradient_L1.ptr<uchar>(y_scaled);
-//        const uchar* label_row = dirLabel_L1.ptr<uchar>(y_scaled);
-//        for (int x = 0; x < src.cols; ++x) {
-//            const int x_scaled = cvRound(x * scale);
-//            if (x_scaled >= dirLabel_L1.cols)
-//                continue;
+        const uchar* edge_row = maxGradient_L1.ptr<uchar>(y_scaled);
+        const uchar* label_row = dirLabel_L1.ptr<uchar>(y_scaled);
+        for (int x = 0; x < src.cols; ++x) {
+            const int x_scaled = cvRound(x * scale);
+            if (x_scaled >= dirLabel_L1.cols)
+                continue;
 
-//            if (label_row[x_scaled] > 0 && edge_row[x_scaled] > 10) {
-//                applyEdgeFilter(dstChanels[0], x, y, label_row[x_scaled]);
-//                applyEdgeFilter(dstChanels[1], x, y, label_row[x_scaled]);
-//                applyEdgeFilter(dstChanels[2], x, y, label_row[x_scaled]);
-////                vPointsToSmooth.push_back(Point(x, y));
-////                vDirsToSmooth.push_back(label_row[x_scaled]);
+            if (label_row[x_scaled] > 0 /*&& edge_row[x_scaled] > 10*/) {
+                applyEdgeFilter(dstChanels[0], x, y, label_row[x_scaled], 5);
+                applyEdgeFilter(dstChanels[1], x, y, label_row[x_scaled], 5);
+                applyEdgeFilter(dstChanels[2], x, y, label_row[x_scaled], 5);
+//                vPointsToSmooth.push_back(Point(x, y));
+//                vDirsToSmooth.push_back(label_row[x_scaled]);
 //                toShow.at<Vec3b>(y, x) = Vec3b(0,255,0);
-//            }
-//        }
-//    }
+            }
+        }
+    }
 
 ////    applyEdgeFilter(srcChannels[0], dstChanels[0], vPointsToSmooth, vDirsToSmooth);
 ////    applyEdgeFilter(srcChannels[1], dstChanels[1], vPointsToSmooth, vDirsToSmooth);
 ////    applyEdgeFilter(srcChannels[2], dstChanels[2], vPointsToSmooth, vDirsToSmooth);
-//    merge(dstChanels, dst);
+    merge(dstChanels, dst);
 
 #if ENABLE_DEBUG && ENABLE_DEBUG_EDGE_FILTER
     Mat input = src.clone(), output = dst.clone();

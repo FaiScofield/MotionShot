@@ -34,7 +34,7 @@ int main(int argc, char* argv[])
                "{blender    b|feather|valid blend type: \"feather\", \"multiband\", \"poission\"}"
                "{scale      c|0.5|scale of inpute image}"
                "{begin      a|1|start index for image sequence}"
-               "{end        e|7|end index for image sequence}"
+               "{end        e|-1|end index for image sequence}"
                "{help       h|false|show help message}");
 
     if (parser.get<bool>("help")) {
@@ -79,6 +79,8 @@ int main(int argc, char* argv[])
 
     // 1.1读取原图
     vector<Mat> vImages, vGTsColor, vGTsGray, vForegroundMasks;
+    if (endIdx == -1)
+        endIdx = 12;
     ReadImageSequence(str_folder, "jpg", vImages, beginIdx, endIdx - beginIdx + 1);  // 1 ~ 12
 //    resizeFlipRotateImages(vImages, 0.5);  //! 注意部分rect掩模是在原图缩小0.5倍后获得的
     const int N = vImages.size();
@@ -90,7 +92,7 @@ int main(int argc, char* argv[])
         vector<Mat> vGTsMaskRect;
         vector<Rect> vGTsRect;
         const string gtFolder = str_folder + "/../gt_rect_baidu/";
-        ReadGroundtruthRectFromFolder(gtFolder, "png", vGTsMaskRect, vGTsRect, beginIdx, endIdx - beginIdx + 1);
+        ReadGroundtruthRectFromFolder(gtFolder, "png", vGTsMaskRect, vGTsRect, beginIdx, N);
         assert(vGTsMaskRect.size() == vGTsRect.size());
 
         vGTsGray.reserve(vGTsMaskRect.size());
@@ -254,8 +256,8 @@ int main(int argc, char* argv[])
 //    exit(0);
     timer.start();
 
-    maskCoarse2Fine(vImages, vForegroundMasks);
-    exit(0);
+//    maskCoarse2Fine(vImages, vForegroundMasks);
+//    exit(0);
 
     // 2.前景拼接融合
     const Mat pano = vImages.front().clone();

@@ -129,7 +129,7 @@ int main(int argc, char* argv[])
     VideoWriter writer("/home/vance/output/result.avi", VideoWriter::fourcc('M', 'J', 'P', 'G'), 25,
                        Size(vImages[0].cols, vImages[0].rows * 2));
 #endif
-    // 试试把所有输入图像做一个中值滤波 获得一个不变的背景
+    // 把所有输入图像做一个中值滤波, 获得一个不变的背景
     Mat medianPano = Mat::zeros(pano.size(), CV_8UC3);
     vector<Mat> vImgs_Y(N); // 每副图像的Y域分量
     for (size_t i = 0; i < N; ++i) {

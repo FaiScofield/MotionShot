@@ -146,7 +146,7 @@ Mat cvBlender::getOverlappedEdgesMask(int size) const
 }
 
 
-cvFeatherBlender::cvFeatherBlender(float sharpness, bool cover) : enable_cover_(cover)
+inline cvFeatherBlender::cvFeatherBlender(float sharpness, bool cover) : enable_cover_(cover)
 {
     if (cover)
         sharpness_ = 1.0;

@@ -43,14 +43,16 @@ Mat FramesDifference::getMotionMask2()
 
         diff.convertTo(diff, CV_8UC1);
 
-        threshold(diff, diff, 20, 255, THRESH_BINARY);
+        threshold(diff, diff, _threshold, 255, THRESH_BINARY);
 
         filterMask(diff, _structureSize);
 
         _diff1 = diff.clone();
-        _image1 = _image2.clone();
+        if (!isFixedBackground())
+            _image1 = _image2.clone();
         return diff;
     }
+
 }
 
 Mat FramesDifference::getMotionMask3()
@@ -85,7 +87,7 @@ Mat FramesDifference::getMotionMask3()
         _diff1 = _diff2.clone();
 
         diff.convertTo(diff, CV_8UC1);
-        threshold(diff, diff, 25, 255, THRESH_BINARY);
+        threshold(diff, diff, _threshold, 255, THRESH_BINARY);
 
         filterMask(diff, _structureSize);
 

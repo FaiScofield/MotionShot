@@ -12,7 +12,8 @@ namespace ms
 #define INFO(msg) (std::cout << "[INFO ] " << msg << std::endl)
 #define TIMER(msg) (std::cout << "\033[32m[TIMER] " << msg << "\033[0m" << std::endl)
 #define WARNING(msg) (std::cerr << "\033[33m[WARNI] " << msg << "\033[0m" << std::endl)
-#define ERROR(msg) (std::cerr << "\033[31m[ERROR] " << msg << "\033[0m (in file " << __FILE__ << ", in line " << __LINE__ << std::endl)
+#define ERROR(msg) (std::cerr << "\033[31m[ERROR] " << msg << "\033[0m (in file \"" \
+                    << __FILE__ << "\", at line " << __LINE__ << ")" << std::endl)
 
 enum InputType {
     VIDEO       = 0,  // 视频序列
@@ -83,7 +84,7 @@ float getPixelValue(const cv::Mat& img, float x, float y);
 cv::Mat guidedFilter(const cv::Mat& src, int radius, double eps);
 
 // 边缘滤波
-void applyEdgeFilter(cv::Mat& img, int x, int y, int dir);
+//void applyEdgeFilter(cv::Mat& img, int x, int y, int dir);
 void overlappedEdgesSmoothing(const cv::Mat& src, const cv::Mat& mask, cv::Mat& dst, double scale = 0.5);
 
 

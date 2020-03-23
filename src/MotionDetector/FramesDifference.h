@@ -10,8 +10,9 @@ namespace ms
 class FramesDifference : public BaseMotionDetector
 {
 public:
-    FramesDifference() : BaseMotionDetector(), _delta(2), _structureSize(5) {}
-    FramesDifference(int d, int s) : BaseMotionDetector(), _delta(d), _structureSize(s) {}
+    FramesDifference() : BaseMotionDetector(), _delta(2), _structureSize(5), _threshold(20) {}
+    FramesDifference(int d, int s, int t = 20) :
+        BaseMotionDetector(), _delta(d), _structureSize(s), _threshold(t) {}
     ~FramesDifference() {}
 
     inline void setDelta(int delta) { _delta = delta; }
@@ -28,6 +29,7 @@ private:
     int _delta;          // 帧差间隔
     int _structureSize;  // 结构元尺寸
     int _iteration;      // 形态学运算次数
+    int _threshold;
 
     cv::Mat _image1, _image2, _image3;
     cv::Mat _diff1, _diff2;
