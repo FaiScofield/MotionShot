@@ -4,9 +4,10 @@
 ===================================================
 */
 
-#include "FramesDifference.h"
-#include "utility.h"
-#include <boost/filesystem.hpp>
+#include "MotionDetector/BS_MOG2_CV.h"
+#include "MotionDetector/FramesDifference.h"
+#include "MotionShoter/utility.h"
+
 #include <iostream>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
@@ -16,7 +17,7 @@
 #include <jsoncpp/json/json.h>
 #include <curl/curl.h>
 
-#define WATERSHED 0
+#define USE_CVMAT_FOR_AIP   1
 #define USE_MEDIAN_FILTER_BACKGROUND    1
 
 using namespace cv;
@@ -56,64 +57,100 @@ int main(int argc, char* argv[])
     double scale = parser.get<double>("scale");
     int beginIdx = parser.get<int>("begin");
     int endIdx = parser.get<int>("end");
-    cout << " - type = " << str_type << endl;
-    cout << " - folder = " << str_folder << endl;
-    cout << " - detector = " << str_detector << endl;
+    INFO(" - type = " << str_type);
+    INFO(" - folder = " << str_folder);
+    INFO(" - detector = " << str_detector);
 
-//    vector<Mat> vImages, vGTs;
-//    InputType inputType;
-//    if (str_type == "video" || str_type == "VIDEO") {
-//        inputType = VIDEO;
-//        scale = 0.3;
-//        ReadImageSequence_video(str_folder, vImages, beginIdx, endIdx);
-//    } else if (str_type == "lasiesta" || str_type == "LASSESTA") {
-//        inputType = LASIESTA;
-//        scale = 1;
-//        ReadImageSequence_lasiesta(str_folder, vImages, vGTs, beginIdx, endIdx);
-//    } else if (str_type == "huawei" || str_type == "HUAWEI") {
-//        inputType = HUAWEI;
-//        scale = 0.1;
-//        ReadImageSequence_huawei(str_folder, vImages, beginIdx, endIdx);
-//    } else if (str_type == "sequence" || str_type == "SEQUENCE") {
-//        inputType = SEQUENCE;
-//        scale = 0.5;
-//        String suffix = parser.get<String>("suffix");
-//        ReadImageSequence(str_folder, suffix, vImages, beginIdx, endIdx);
-//    } else {
-//        ERROR("[Error] Unknown input type for " << str_type);
-//        return -1;
-//    }
-//    cout << " - Image size input = " << vImages[0].size() << endl;
-//    resizeFlipRotateImages(vImages, scale);
+    vector<Mat> vImages;
+    InputType inputType;
+    if (str_type == "video" || str_type == "VIDEO") {
+        inputType = VIDEO;
+        scale = 0.3;
+        ReadImageSequence_video(str_folder, vImages, beginIdx, endIdx);
+    } else if (str_type == "lasiesta" || str_type == "LASSESTA") {
+        inputType = LASIESTA;
+        scale = 1;
+        vector<Mat> vGTs;
+        ReadImageSequence_lasiesta(str_folder, vImages, vGTs, beginIdx, endIdx);
+    } else if (str_type == "huawei" || str_type == "HUAWEI") {
+        inputType = HUAWEI;
+        scale = 0.1;
+        ReadImageSequence_huawei(str_folder, vImages, beginIdx, endIdx);
+    } else if (str_type == "sequence" || str_type == "SEQUENCE") {
+        inputType = SEQUENCE;
+        scale = 0.5;
+        String suffix = parser.get<String>("suffix");
+        ReadImageSequence(str_folder, suffix, vImages, beginIdx, endIdx);
+    } else {
+        ERROR("[Error] Unknown input type for " << str_type);
+        return -1;
+    }
+    INFO(" - Image size input = " << vImages[0].size());
+    resizeFlipRotateImages(vImages, scale);
 
-    vector<string> vImageFiles;
-    ReadImageNamesFromFolder(str_folder, vImageFiles);
+    BaseMotionDetector* detector;
+    if (str_detector == "fd") {
+        int size = parser.get<int>("size");
+        INFO(" - kernel size = " << size);
+        assert(size > 2);
+        detector = dynamic_cast<BaseMotionDetector*>(new FramesDifference(2, size, 10));
+    } else if (str_detector == "mog2") {
+        Ptr<BackgroundSubtractorMOG2> bs = createBackgroundSubtractorMOG2(500, 100.0, true);
+        detector = dynamic_cast<BaseMotionDetector*>(new BS_MOG2_CV(bs.get()));
+    } else {
+        ERROR("Unknown input detector for " << str_detector);
+        return -1;
+    }
+
+    // 把所有输入图像做一个中值滤波, 获得一个不变的背景
+    const size_t N = vImages.size();
+    Mat medianPano = Mat::zeros(vImages[0].size(), CV_8UC3);
+    vector<Mat> vImgs_Y(N); // 每副图像的Y域分量
+    for (size_t i = 0; i < N; ++i) {
+        Mat imgYUV;
+        cvtColor(vImages[i], imgYUV, COLOR_BGR2YUV);
+        vector<Mat> channels;
+        split(imgYUV, channels);
+        vImgs_Y[i] = channels[0];
+    }
+
+    // 中值滤波
+    for (int y = 0; y < vImages[0].rows; ++y) {
+        Vec3b* imgRow = medianPano.ptr<Vec3b>(y);
+
+        for(int x = 0; x < vImages[0].cols; ++x) {
+            vector<pair<uchar, uchar>> vLumarAndIndex;
+            for (size_t i = 0; i < N; ++i)
+                vLumarAndIndex.emplace_back(vImgs_Y[i].at<uchar>(y, x), i);
+
+            sort(vLumarAndIndex.begin(), vLumarAndIndex.end()); // 根据亮度中值决定此像素的值由哪张图像提供
+            uchar idx = vLumarAndIndex[N/2].second;
+            imgRow[x] = vImages[idx].at<Vec3b>(y, x);
+        }
+    }
+    imwrite("/home/vance/output/ms/fixBackground(medianBlur).jpg", medianPano);
+    detector->setFixedBackground(true);
+    Mat tmpMask;
+    detector->apply(medianPano, tmpMask);   // 喂第一帧
 
     map<string, string> options;
     options["type"] = "scoremap";
-    const size_t N = vImageFiles.size();
+
+
     for (size_t i = 0; i < N; ++i) {
-        INFO("Dealing with image " << vImageFiles[i]);
-
-        //! TODO Mat to binary string
-
-        // 调用接口函数
-        string imageFile;
-        aip::get_file_content(vImageFiles[i].c_str(), &imageFile);
-        Json::Value result = client.body_seg(imageFile, options/*aip::null*/);
+        // 调用SDK获取分割结果
+        Mat& image = vImages[i];
+        Json::Value result = client.body_seg_cv(image, options);
 
         // 解析Json结果
         string scoremap = result["scoremap"].asString();    // 灰度图像
         string decode_result = aip::base64_decode(scoremap);
-//        string labelmap = result["labelmap"].asString();    // 二值图像
-//        string foreground = result["foreground"].asString();// 前景
 
         vector<char> base64_img(decode_result.begin(), decode_result.end());
-        Mat image = imdecode(base64_img, IMREAD_COLOR);
-        imshow("mask", image);
-        waitKey(0);
+        Mat mask = imdecode(base64_img, IMREAD_COLOR);
+//        imshow("mask", mask);
+//        waitKey(0);
 
-//        Json::Value result2 = client.body_seg_cv(image, options);
     }
 
 

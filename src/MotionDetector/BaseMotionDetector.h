@@ -30,6 +30,8 @@ private:
     bool _isFirstFrame;
     bool _isFixedBackground;
     int  _structureSize;
+
+    cv::Mat _background;
 };
 
 }  // namespace ms

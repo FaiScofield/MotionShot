@@ -14,9 +14,13 @@ void BS_MOG2_CV::applyMask(const cv::Mat& mask)
 
 void BS_MOG2_CV::apply(const Mat& input, Mat& mask)
 {
-    _extractor->apply(input, mask);
+    if (isFixedBackground())
+        _extractor->apply(input, mask, 0);
+    else
+        _extractor->apply(input, mask);
     if (mask.empty())
         return;
+
     filterMask(mask);
     _foreground = mask.clone();
 }
