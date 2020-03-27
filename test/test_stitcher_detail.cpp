@@ -1,4 +1,4 @@
-
+#include "MotionShoter/utility.h"
 #include "opencv2/highgui.hpp"
 #include "opencv2/imgcodecs.hpp"
 #include "opencv2/opencv_modules.hpp"
@@ -28,6 +28,7 @@
 using namespace std;
 using namespace cv;
 using namespace cv::detail;
+using namespace ms;
 
 static void printUsage()
 {
@@ -51,7 +52,8 @@ static void printUsage()
             "  --estimator (homography|affine)\n"
             "      Type of estimator used for transformation estimation.\n"
             "  --match_conf <float>\n"
-            "      Confidence for feature matching step. The default is 0.65 for surf and 0.3 for orb.\n"
+            "      Confidence for feature matching step. The default is 0.65 for surf and 0.3 for "
+            "orb.\n"
             "  --conf_thresh <float>\n"
             "      Threshold for two images are from the same panorama confidence.\n"
             "      The default is 1.0.\n"
@@ -108,41 +110,43 @@ static void printUsage()
             "  --rangewidth <int>\n"
             "      uses range_width to limit number of images to match with.\n";
 }
+void drawMatchesResult(const Mat& img1, const vector<KeyPoint>& kp1, const Mat& img2,
+                       const vector<KeyPoint>& kp2, Mat& output, MatchesInfo& info);
 
-
+const string prefix = "/home/vance/output/ms/";
 // Default command line args
 vector<String> img_names;
 bool preview = false;
 bool try_cuda = false;
-double work_megapix = 0.6;
+double work_megapix = 0.625;  // 处理图像的分辨率上限, 单位: M pixel. 对于10Mp照片各边要缩小到1/4
 double seam_megapix = 0.1;
 double compose_megapix = -1;
 float conf_thresh = 1.f;
-#ifdef HAVE_OPENCV_XFEATURES2D
-string features_type = "surf";
-float match_conf = 0.65f;
-#else
-string features_type = "orb";
+//#ifdef HAVE_OPENCV_XFEATURES2D
+//string features_type = "surf";
+//float match_conf = 0.65f;  // 值越大匹配条件越严格. d1 < (1. - match_conf) * d2
+//#else
+string features_type = "orb";  // akaze, orb
 float match_conf = 0.3f;
-#endif
-string matcher_type = "homography";
+//#endif
+string matcher_type = "homography"; // affine, homography
 string estimator_type = "homography";
-string ba_cost_func = "ray";
+string ba_cost_func = "reproj";    // reproj, ray, affine, no
 string ba_refine_mask = "xxxxx";
 bool do_wave_correct = true;
 WaveCorrectKind wave_correct = detail::WAVE_CORRECT_HORIZ;
-bool save_graph = false;
-std::string save_graph_to;
-string warp_type = "plane";
+bool save_graph = true;  //  false
+std::string save_graph_to = "/home/vance/output/ms/matchGraph.txt";
+string warp_type = "cylindrical"; // plane, cylindrical, spherical
 int expos_comp_type = ExposureCompensator::GAIN_BLOCKS;
 int expos_comp_nr_feeds = 1;
 int expos_comp_nr_filtering = 2;
 int expos_comp_block_size = 32;
 string seam_find_type = "gc_color";
-int blend_type = Blender::MULTI_BAND;
+int blend_type = Blender::FEATHER/*Blender::MULTI_BAND*/;
 int timelapse_type = Timelapser::AS_IS;
 float blend_strength = 5;
-string result_name = "result.jpg";
+string result_name = prefix + "result.jpg";
 bool timelapse = false;
 int range_width = -1;
 
@@ -315,7 +319,25 @@ static int parseCmdArgs(int argc, char** argv)
     }
     return 0;
 }
-
+static void printParams()
+{
+    INFO("work megapixel [M pixel]: " << work_megapix);
+    INFO("seam megapixel [M pixel]: " << seam_megapix);
+    INFO("compose megapixel [M pixel]: " << compose_megapix);
+    INFO("ba confidence thresh: " << conf_thresh);
+    INFO("feature type: " << features_type);
+    INFO("feature match confidence: " << match_conf);
+    INFO("matcher type: " << matcher_type);
+    INFO("estimator type: " << estimator_type);
+    INFO("ba cost function: " << ba_cost_func);
+    INFO("do wave correct: " << do_wave_correct);
+    INFO("warp type: " << warp_type);
+    INFO("seam finder type: " << seam_find_type);
+    INFO("blend type: " << blend_type);
+    INFO("blend strength: " << blend_strength);
+    INFO("range width: " << range_width);
+    cout << endl;
+}
 
 int main(int argc, char* argv[])
 {
@@ -326,10 +348,13 @@ int main(int argc, char* argv[])
 #if 0
     cv::setBreakOnError(true);
 #endif
+    printParams();
 
-    int retval = parseCmdArgs(argc, argv);
-    if (retval)
-        return retval;
+    for (int i = 1; i < 8; ++i) {
+        string imgName =
+            "/home/vance/dataset/rk/Phone/withGT2/girl-stand-mj-7/image_full/" + to_string(i) + ".jpg";
+        img_names.push_back(imgName);
+    }
 
     // Check if have enough images
     int num_images = static_cast<int>(img_names.size());
@@ -338,9 +363,12 @@ int main(int argc, char* argv[])
         return -1;
     }
 
+    const int BFI = (num_images - 1) / 2 ;  // base frame index
+
     double work_scale = 1, seam_scale = 1, compose_scale = 1;
     bool is_work_scale_set = false, is_seam_scale_set = false, is_compose_scale_set = false;
 
+    // 1.缩小图像(0.6M像素内), 提取特征点
     LOGLN("Finding features...");
 #if ENABLE_LOG
     int64 t = getTickCount();
@@ -348,7 +376,7 @@ int main(int argc, char* argv[])
 
     Ptr<Feature2D> finder;
     if (features_type == "orb") {
-        finder = ORB::create();
+        finder = ORB::create(1000, 1.2, 5);
     } else if (features_type == "akaze") {
         finder = AKAZE::create();
     }
@@ -378,36 +406,37 @@ int main(int argc, char* argv[])
             LOGLN("Can't open image " << img_names[i]);
             return -1;
         }
-        if (work_megapix < 0) {
+        if (work_megapix < 0) {  // default 0.6
             img = full_img;
             work_scale = 1;
             is_work_scale_set = true;
         } else {
-            if (!is_work_scale_set) {
+            if (!is_work_scale_set) {  // 控制图片分辨率不超过0.6Mp
                 work_scale = min(1.0, sqrt(work_megapix * 1e6 / full_img.size().area()));
                 is_work_scale_set = true;
             }
-            resize(full_img, img, Size(), work_scale, work_scale, INTER_LINEAR_EXACT);
+            resize(full_img, img, Size(), work_scale, work_scale, INTER_LINEAR_EXACT); // 1/4
         }
         if (!is_seam_scale_set) {
             seam_scale = min(1.0, sqrt(seam_megapix * 1e6 / full_img.size().area()));
-            seam_work_aspect = seam_scale / work_scale;
+            seam_work_aspect = seam_scale / work_scale;  // sqrt(1/6)
             is_seam_scale_set = true;
         }
 
         computeImageFeatures(finder, img, features[i]);
         features[i].img_idx = i;
-        LOGLN("Features in image #" << i + 1 << ": " << features[i].keypoints.size());
+        LOGLN("Features in image #" << i << ": " << features[i].keypoints.size());
 
         resize(full_img, img, Size(), seam_scale, seam_scale, INTER_LINEAR_EXACT);
         images[i] = img.clone();
     }
-
     full_img.release();
     img.release();
 
+    const bool largeWin = full_img_sizes[0].width > 1600 || full_img_sizes[0].height > 1200;
     LOGLN("Finding features, time: " << ((getTickCount() - t) / getTickFrequency()) << " sec");
 
+    // 2.特征点匹配
     LOG("Pairwise matching");
 #if ENABLE_LOG
     t = getTickCount();
@@ -421,7 +450,12 @@ int main(int argc, char* argv[])
     else
         matcher = makePtr<BestOf2NearestRangeMatcher>(range_width, try_cuda, match_conf);
 
-    (*matcher)(features, pairwise_matches);
+    // 设置mask只和基准帧匹配
+    UMat matchMask_UMat = UMat::zeros(num_images, num_images, CV_8U);
+    Mat matchMask = matchMask_UMat.getMat(ACCESS_RW);
+    matchMask.row(BFI).setTo(255);
+    matchMask.at<uchar>(BFI, BFI) = 0;
+    (*matcher)(features, pairwise_matches, matchMask_UMat);
     matcher->collectGarbage();
 
     LOGLN("Pairwise matching, time: " << ((getTickCount() - t) / getTickFrequency()) << " sec");
@@ -432,9 +466,27 @@ int main(int argc, char* argv[])
         ofstream f(save_graph_to.c_str());
         f << matchesGraphAsString(img_names, pairwise_matches, conf_thresh);
     }
-
+#define SHOW_MATCH_RESULT 1
+#if SHOW_MATCH_RESULT
+    namedLargeWindow("Match Result", largeWin);
+    Mat& baseFrame = images[BFI];
+    for (int i = 0; i < num_images; ++i) {
+        if (i == BFI)
+            continue;
+        Mat matchResult;
+        const int matchIdx = BFI * num_images + i;
+        MatchesInfo& matchInfo_i = pairwise_matches[matchIdx];
+//        assert(matchInfo_i.src_img_idx == BFI);
+//        assert(matchInfo_i.dst_img_idx == i);
+        drawMatchesResult(baseFrame, features[BFI].getKeypoints(), images[i],
+                          features[i].getKeypoints(), matchResult, matchInfo_i);
+        imshow("Match Result", matchResult);
+        waitKey(0);
+    }
+#endif
     // Leave only images we are sure are from the same panorama
-    vector<int> indices = leaveBiggestComponent(features, pairwise_matches, conf_thresh);
+    // 去除无法匹配的图像或者相似度过高的图像
+ /*  vector<int> indices = leaveBiggestComponent(features, pairwise_matches, conf_thresh);
     vector<Mat> img_subset;
     vector<String> img_names_subset;
     vector<Size> full_img_sizes_subset;
@@ -443,7 +495,6 @@ int main(int argc, char* argv[])
         img_subset.push_back(images[indices[i]]);
         full_img_sizes_subset.push_back(full_img_sizes[indices[i]]);
     }
-
     images = img_subset;
     img_names = img_names_subset;
     full_img_sizes = full_img_sizes_subset;
@@ -454,7 +505,10 @@ int main(int argc, char* argv[])
         LOGLN("Need more images");
         return -1;
     }
+*/
+    vector<int> indices{0, 1, 2, 3, 4, 5, 6};
 
+    // 3.计算相机内外参和焦距
     Ptr<Estimator> estimator;
     if (estimator_type == "affine")
         estimator = makePtr<AffineBasedEstimator>();
@@ -525,6 +579,7 @@ int main(int argc, char* argv[])
         warped_image_scale =
             static_cast<float>(focals[focals.size() / 2 - 1] + focals[focals.size() / 2]) * 0.5f;
 
+    // 4.波形校正
     if (do_wave_correct) {
         vector<Mat> rmats;
         for (size_t i = 0; i < cameras.size(); ++i)
@@ -534,6 +589,7 @@ int main(int argc, char* argv[])
             cameras[i].R = rmats[i];
     }
 
+    // 5.变换
     LOGLN("Warping images (auxiliary)... ");
 #if ENABLE_LOG
     t = getTickCount();
@@ -616,8 +672,8 @@ int main(int argc, char* argv[])
         K(1, 1) *= swa;
         K(1, 2) *= swa;
 
-        corners[i] =
-            warper->warp(images[i], K, cameras[i].R, INTER_LINEAR, BORDER_REFLECT, images_warped[i]);
+        corners[i] = warper->warp(images[i], K, cameras[i].R, INTER_LINEAR, BORDER_REFLECT,
+                                  images_warped[i]);
         sizes[i] = images_warped[i].size();
 
         warper->warp(masks[i], K, cameras[i].R, INTER_NEAREST, BORDER_CONSTANT, masks_warped[i]);
@@ -629,6 +685,7 @@ int main(int argc, char* argv[])
 
     LOGLN("Warping images, time: " << ((getTickCount() - t) / getTickFrequency()) << " sec");
 
+    // 6.曝光补偿
     LOGLN("Compensating exposure...");
 #if ENABLE_LOG
     t = getTickCount();
@@ -656,6 +713,7 @@ int main(int argc, char* argv[])
 
     LOGLN("Compensating exposure, time: " << ((getTickCount() - t) / getTickFrequency()) << " sec");
 
+    // 7.缝合线计算
     LOGLN("Finding seams...");
 #if ENABLE_LOG
     t = getTickCount();
@@ -699,6 +757,7 @@ int main(int argc, char* argv[])
     images_warped_f.clear();
     masks.clear();
 
+    // 8.组合
     LOGLN("Compositing...");
 #if ENABLE_LOG
     t = getTickCount();
@@ -782,13 +841,15 @@ int main(int argc, char* argv[])
 
         if (!blender && !timelapse) {
             blender = Blender::createDefault(blend_type, try_cuda);
-            Size dst_sz = resultRoi(corners, sizes).size();
+            Size dst_sz = cv::detail::resultRoi(corners, sizes).size();
             float blend_width = sqrt(static_cast<float>(dst_sz.area())) * blend_strength / 100.f;
+            LOGLN("Blend width: " << blend_width);
             if (blend_width < 1.f)
                 blender = Blender::createDefault(Blender::NO, try_cuda);
             else if (blend_type == Blender::MULTI_BAND) {
                 MultiBandBlender* mb = dynamic_cast<MultiBandBlender*>(blender.get());
-                mb->setNumBands(static_cast<int>(ceil(log(blend_width) / log(2.)) - 1.));
+                mb->setNumBands(2);
+                //mb->setNumBands(static_cast<int>(ceil(log(blend_width) / log(2.)) - 1.));
                 LOGLN("Multi-band blender, number of bands: " << mb->numBands());
             } else if (blend_type == Blender::FEATHER) {
                 FeatherBlender* fb = dynamic_cast<FeatherBlender*>(blender.get());
@@ -804,15 +865,14 @@ int main(int argc, char* argv[])
         // Blend the current image
         if (timelapse) {
             timelapser->process(img_warped_s, Mat::ones(img_warped_s.size(), CV_8UC1), corners[img_idx]);
-            String fixedFileName;
-            size_t pos_s = String(img_names[img_idx]).find_last_of("/\\");
-            if (pos_s == String::npos) {
-                fixedFileName = "fixed_" + img_names[img_idx];
-            } else {
-                fixedFileName =
-                    "fixed_" +
-                    String(img_names[img_idx]).substr(pos_s + 1, String(img_names[img_idx]).length() - pos_s);
-            }
+            String fixedFileName = prefix + "fixed_" + to_string(img_idx) + ".jpg";
+//            size_t pos_s = String(img_names[img_idx]).find_last_of("/\\");
+//            if (pos_s == String::npos) {
+//                fixedFileName = prefix + "fixed_" + to_string(img_idx) + ".jpg";
+//            } else {
+//                fixedFileName = prefix+ "fixed_" + String(img_names[img_idx]).substr(pos_s + 1,
+//                                                  String(img_names[img_idx]).length() - pos_s);
+//            }
             imwrite(fixedFileName, timelapser->getDst());
         } else {
             blender->feed(img_warped_s, mask_warped, corners[img_idx]);
@@ -830,4 +890,31 @@ int main(int argc, char* argv[])
 
     LOGLN("Finished, total time: " << ((getTickCount() - app_start_time) / getTickFrequency()) << " sec");
     return 0;
+}
+
+
+
+void drawMatchesResult(const Mat& img1, const vector<KeyPoint>& kp1, const Mat& img2,
+                       const vector<KeyPoint>& kp2, Mat& output, MatchesInfo& info)
+{
+    assert(img1.size() == img2.size());
+
+    vconcat(img1, img2, output);
+
+    const vector<DMatch> matches = info.getMatches();
+    const vector<uchar> inliers = info.getInliers();
+    assert(matches.size() == inliers.size());
+
+    const Point2f offset(0, img1.rows);
+    for (size_t i = 0, iend = matches.size(); i < iend; ++i) {
+        if (!inliers[i])
+            continue;
+
+        const DMatch& m = matches[i];
+        const Point2f pt1 = kp1[m.queryIdx].pt;
+        const Point2f pt2 = kp2[m.trainIdx].pt + offset;
+        circle(output, pt1, 2, Scalar(0,255,0));
+        circle(output, pt2, 2, Scalar(0,255,0));
+        line(output, pt1, pt2, Scalar(120,100,30));
+    }
 }

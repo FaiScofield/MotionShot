@@ -5,8 +5,12 @@
 #include <opencv2/calib3d/calib3d.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+
 #include <opencv2/xfeatures2d/nonfree.hpp>
+
 //#include <opencv2/stitching.hpp>
+
+#define ENABLE_DEBUG    1
 
 namespace ms
 {
@@ -23,11 +27,8 @@ using namespace cv;
 ImageStitcher::ImageStitcher(FeatureType ft, MatchType mt) : _featureType(ft), _matchType(mt)
 {
     switch (_featureType) {
-    case sift:
-        _featureExtractor = cv::xfeatures2d::SIFT::create(400);
-        break;
     case orb:
-        _featureExtractor = cv::ORB::create();
+        _featureExtractor = cv::ORB::create(1000, 1.2, 5);
         break;
     case akaze:
         _featureExtractor = cv::AKAZE::create();
@@ -53,32 +54,32 @@ ImageStitcher::ImageStitcher(FeatureType ft, MatchType mt) : _featureType(ft), _
 //    _matcher = DescriptorMatcher::create(descriptorMatcherType);
 //    return !_matcher.empty();
 //}
-bool ImageStitcher::stitch(const std::vector<Mat>& images, Mat& pano)
+
+//! TODO
+void ImageStitcher::stitch(const std::vector<Mat>& images, Mat& pano)
 {
     if (images.size() < 2)
         return false;
 
     _ImgSizeInput = images[0].size();
     Mat warpedMask1;
-    return stitch(images.front(), images.back(), pano, warpedMask1);
+    stitch(images.front(), images.back(), pano, warpedMask1);
 }
 
-//! TODO 要以尾帧做基准
-bool ImageStitcher::stitch(const Mat& img1, const Mat& img2, Mat& pano, Mat& warpedMask2)
+void ImageStitcher::stitch(const Mat& img1, const Mat& img2, Mat& pano, Mat& warpedMask2)
 {
-//#define DEBUG_RESULT_STITCH
+#define DEBUG_STITCH_TWO_IMAGES 1
 
     Mat H21 = computeHomography(img1, img2);
     if (H21.empty())
-        return false;
+        return;
 
     Mat H12 = H21.inv(DECOMP_SVD);
 
     Mat warpedImg2;
     WarpedCorners corners = getWarpedCorners(img2, H12);
 //    cout << "Direction  = " << corners.direction << endl;
-    assert(corners.direction = RIGHT);  //! TODO
-
+//    assert(corners.direction = RIGHT);  //! TODO
 
 /*
     int panoCols;
@@ -112,7 +113,7 @@ bool ImageStitcher::stitch(const Mat& img1, const Mat& img2, Mat& pano, Mat& war
     mask2.setTo(255);
     warpPerspective(mask2, warpedMask2, H12, Size(panoCols, img1.rows));
 
-#ifdef DEBUG_RESULT_STITCH
+#if ENABLE_DEBUG && DEBUG_STITCH_TWO_IMAGES
     Mat tmp1, tmp2;
     cvtColor(warpedMask2, tmp1, COLOR_GRAY2BGR);
     vconcat(warpedImg2, tmp1, tmp2);

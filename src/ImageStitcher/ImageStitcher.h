@@ -22,7 +22,7 @@ struct WarpedCorners {
 class ImageStitcher
 {
 public:
-    enum FeatureType { sift, surf, orb, akaze };
+    enum FeatureType { surf, orb, akaze };
 
     enum MatchType { bf, flann };
 
@@ -30,8 +30,8 @@ public:
 
     // bool setMatcher(const std::string& descriptorMatcherType);
 
-    bool stitch(const std::vector<cv::Mat>& images, cv::Mat& pano);
-    bool stitch(const cv::Mat& img1, const cv::Mat& img2, cv::Mat& pano, cv::Mat& warpedMask1);
+    void stitch(const std::vector<cv::Mat>& images, cv::Mat& pano);
+    void stitch(const cv::Mat& img1, const cv::Mat& img2, cv::Mat& pano, cv::Mat& warpedMask1);
 
     cv::Mat computeHomography(const cv::Mat& img1, const cv::Mat& img2);
 

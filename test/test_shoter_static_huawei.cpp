@@ -37,7 +37,7 @@ int main(int argc, char* argv[])
                "{end        e|-1|end index for image sequence}"
                "{help       h|false|show help message}");
 
-    if (parser.get<bool>("help")) {
+    if (argc < 2 || parser.get<bool>("help")) {
         parser.printMessage();
         return 0;
     }
