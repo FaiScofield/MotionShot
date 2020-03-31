@@ -19,7 +19,7 @@ using namespace std;
 using namespace cv;
 
 ImageStitcher::ImageStitcher(FeatureType ft, FeatureMatchType mt)
-    : featureType_(ft), featureMatchType_(mt)
+    : featureType_(ft), featureMatchType_(mt), registScale_(0.5)
 {
     switch (featureType_) {
     case ORB:
@@ -34,13 +34,25 @@ ImageStitcher::ImageStitcher(FeatureType ft, FeatureMatchType mt)
         break;
     }
 
-    //    featureMatcher_ = cv::BFMatcher::create();
-    //    featureMatcher_ = cv::FlannBasedMatcher::create();
+    // featureMatcher_ = cv::BFMatcher::create();
+    // featureMatcher_ = cv::FlannBasedMatcher::create();
     featureMatcher_ = makePtr<ms::detail::BestOf2NearestMatcher>(false);
 
     motionEstimator_ = makePtr<cv::detail::HomographyBasedEstimator>();
-//    warper_ = cv::PlaneWarper::create(1.f);
+    // warper_ = cv::PlaneWarper::create(1.f);
     warper_ = makePtr<cv::detail::PlaneWarper>(1.f);
+
+    // 分辨率阈值 <= 0 时则说明和输入图像一致
+    registResol_ = 0;
+    seamResol_ = 0;
+    composeResol_ = 0;
+    determinScaleByResol_ = false;  // determin resolution
+
+    registScale_ = 0.25;            // determin scale
+    seamScale_ = 0.1;
+    composeScale_ = 1.;
+
+    warpedImageScale_ = 0;
 
     doBundleAjustment_ = false;
     doWaveCorrection_ = false;
@@ -53,8 +65,10 @@ ImageStitcher::ImageStitcher(FeatureType ft, FeatureMatchType mt)
     else
         bundleAdjuster_ = makePtr<cv::detail::NoBundleAdjuster>();
 
-    if (doExposureCompensation_)
+    if (doExposureCompensation_ || doSeamOptimization_) {  //! TODO
         exposureCompensator_ = makePtr<cv::detail::BlocksGainCompensator>();
+        seamFinder_ = makePtr<cv::detail::GraphCutSeamFinder>(cv::detail::GraphCutSeamFinderBase::COST_COLOR);
+    }
 
     if (doSeamlessBlending_)
         blender_ = makePtr<ms::cvFeatherBlender>();
@@ -67,6 +81,28 @@ Ptr<ImageStitcher> ImageStitcher::create(FeatureType ft, FeatureMatchType mt)
     return cv::makePtr<ImageStitcher>(ft, mt);
 }
 
+void ImageStitcher::setRistResolutions(double r1, double r2, double r3)
+{
+    registResol_ = r1;
+    seamResol_ = r2;
+    composeResol_ = r3;
+    determinScaleByResol_ = true;
+
+    assert(r1 > 0 && r2 > 0);
+    if (r2 > r1)
+        WARNING("It's better to set the seam_resolution <= registration_resolution");
+}
+
+void ImageStitcher::setScales(double s1, double s2, double s3)
+{
+    registScale_ = s1;
+    seamScale_ = s2;
+    composeScale_ = s3;
+    determinScaleByResol_ = false;
+
+    assert(s1 > 0 && s2 > 0 && s3 > 0);
+}
+
 
 ImageStitcher::Status ImageStitcher::stitch(InputArrayOfArrays images, OutputArray pano)
 {
@@ -76,7 +112,6 @@ ImageStitcher::Status ImageStitcher::stitch(InputArrayOfArrays images, OutputArr
 ImageStitcher::Status ImageStitcher::stitch(InputArrayOfArrays images, InputArrayOfArrays masks, OutputArray pano)
 {
     Status status = estimateTransform(images, masks);
-    return status;
 
     if (status != OK)
         return status;
@@ -85,8 +120,11 @@ ImageStitcher::Status ImageStitcher::stitch(InputArrayOfArrays images, InputArra
 
 ImageStitcher::Status ImageStitcher::estimateTransform(InputArrayOfArrays images, InputArrayOfArrays masks)
 {
-    images.getUMatVector(fullImages_);
-    masks.getUMatVector(fullMasks_);
+    images.getUMatVector(inputImages_);
+    masks.getUMatVector(inputMasks_);
+    numImgs_ = inputImages_.size();
+    if (!inputMasks_.empty())
+        assert(inputMasks_.size() == numImgs_);
 
     Status status;
     if ((status = matchImages()) != OK)
@@ -100,273 +138,219 @@ ImageStitcher::Status ImageStitcher::estimateTransform(InputArrayOfArrays images
 
 ImageStitcher::Status ImageStitcher::composePanorama(OutputArray pano)
 {
-    INFO("Warping images (auxiliary)... ");
+    assert((int)numImgs_ >= 2);
+    assert(indices_.size() >= 2);
 
-    //    vector<UMat> imgs;
-    //    images.getUMatVector(imgs);
-    //    if (!imgs.empty()) {
-    //        CV_Assert(imgs.size() == fullImages_.size());
+    vector<UMat> warpedImages(numImgs_);
+    vector<UMat> warpedMasks(numImgs_);
+    vector<Point> warpedCorners(numImgs_);
+    vector<Size> warpedSizes(numImgs_);
 
-    //        UMat img;
-    //        seam_est_fullImages_.resize(imgs.size());
+    /// 缝合线优化
+    if (doExposureCompensation_ || doSeamOptimization_) {
+        INFO("Warping images for seamless process (auxiliary)... ");
 
-    //        for (size_t i = 0; i < imgs.size(); ++i) {
-    //            fullImages_[i] = imgs[i];
-    //            resize(imgs[i], img, Size(), seam_scale_, seam_scale_, INTER_LINEAR_EXACT);
-    //            seam_est_fullImages_[i] = img.clone();
-    //        }
+        const float seam_work_aspect = static_cast<float>(seamScale_ / registScale_);
+        INFO("seamScale_ = " << seamScale_ << ", and seam_work_aspect = " << seam_work_aspect);
 
-    //        vector<UMat> seam_est_fullImages_subset;
-    //        vector<UMat> fullImages_subset;
+        warper_->setScale(static_cast<float>(warpedImageScale_ * seam_work_aspect));
 
-    //        for (size_t i = 0; i < indices_.size(); ++i) {
-    //            fullImages_subset.push_back(fullImages_[indices_[i]]);
-    //            seam_est_fullImages_subset.push_back(seam_est_fullImages_[indices_[i]]);
-    //        }
+        // 在更低的尺度上估计缝合线
+        UMat seamEstImg, seamEstMask;
+        for (size_t i = 0; i < numImgs_; ++i) {
+            Mat_<float> K;
+            cameras_[i].K().convertTo(K, CV_32F);
+            K(0, 0) *= seam_work_aspect;
+            K(0, 2) *= seam_work_aspect;
+            K(1, 1) *= seam_work_aspect;
+            K(1, 2) *= seam_work_aspect;
 
-    //        seam_est_fullImages_ = seam_est_fullImages_subset;
-    //        fullImages_ = fullImages_subset;
-    //    }
+            resize(inputImages_[i], seamEstImg, Size(), seamScale_, seamScale_, INTER_LINEAR_EXACT);
+            warpedCorners[i] = warper_->warp(seamEstImg, K, cameras_[i].R, INTER_LINEAR,
+                                             BORDER_REFLECT, warpedImages[i]);
+            warpedSizes[i] = warpedImages[i].size();
 
-    UMat pano_;
-
-#if ENABLE_LOG
-    int64 t = getTickCount();
-#endif
-
-    vector<Point> corners(fullImages_.size());
-    vector<UMat> fullMasks_warped(fullImages_.size());
-    vector<UMat> images_warped(fullImages_.size());
-    vector<Size> sizes(fullImages_.size());
-    vector<UMat> masks(fullImages_.size());
-
-    // Prepare image masks
-    for (size_t i = 0; i < fullImages_.size(); ++i) {
-        masks[i].create(scaledImgSize_[i], CV_8U);
-        masks[i].setTo(Scalar::all(255));
-    }
-
-    // Warp images and their masks
-    warper_->setScale(1.f);
-    for (size_t i = 0; i < fullImages_.size(); ++i) {
-        Mat_<float> K;
-        cameras_[i].K().convertTo(K, CV_32F);
-        K(0, 0) *= (float)invScaled_;
-        K(0, 2) *= (float)invScaled_;
-        K(1, 1) *= (float)invScaled_;
-        K(1, 2) *= (float)invScaled_;
-
-        corners[i] = warper_->warp(fullImages_[i], K, cameras_[i].R, INTER_LINEAR_EXACT,
-                                   BORDER_REFLECT, images_warped[i]);
-        sizes[i] = images_warped[i].size();
-
-        warper_->warp(masks[i], K, cameras_[i].R, INTER_NEAREST, BORDER_CONSTANT, fullMasks_warped[i]);
-    }
-
-    INFO("Warping images, time: " << ((getTickCount() - t) / getTickFrequency()) << " sec");
-
-
-    images_warped.clear();
-    masks.clear();
-
-    INFO("Compositing...");
-#if ENABLE_LOG
-    t = getTickCount();
-#endif
-
-    UMat img_warped, img_warped_s;
-    UMat dilated_mask, seam_mask, mask, mask_warped;
-
-    // double compose_seam_aspect = 1;
-    double compose_work_aspect = 1;
-    bool is_blender_prepared = false;
-
-    double compose_scale = 1;
-    bool is_compose_scale_set = false;
-
-    vector<ms::detail::CameraParams> cameras_scaled(cameras_);
-
-    UMat full_img, img;
-    for (size_t img_idx = 0; img_idx < fullImages_.size(); ++img_idx) {
-        INFO("Compositing image #" << indices_[img_idx] + 1);
-#if ENABLE_LOG
-        int64 compositing_t = getTickCount();
-#endif
-
-        // Read image and resize it if necessary
-        full_img = fullImages_[img_idx];
-        if (!is_compose_scale_set) {
-            if (compose_resol_ > 0)
-                compose_scale = std::min(1.0, std::sqrt(compose_resol_ * 1e6 / full_img.size().area()));
-            is_compose_scale_set = true;
-
-            // Compute relative scales
-            // compose_seam_aspect = compose_scale / seam_scale_;
-            compose_work_aspect = compose_scale / scale_;
-
-            // Update warped image scale
-            float warp_scale = static_cast<float>(warped_image_scale_);
-            warper_->setScale(warp_scale);
-//            warper_ = warperCreator_->create(warp_scale);
-
-            // Update corners and sizes
-            for (size_t i = 0; i < fullImages_.size(); ++i) {
-                // Update intrinsics
-                cameras_scaled[i].ppx *= compose_work_aspect;
-                cameras_scaled[i].ppy *= compose_work_aspect;
-                cameras_scaled[i].focal *= compose_work_aspect;
-
-                // Update corner and size
-                Size sz = fullImgSize_[i];
-                if (std::abs(compose_scale - 1) > 1e-1) {
-                    sz.width = cvRound(fullImgSize_[i].width * compose_scale);
-                    sz.height = cvRound(fullImgSize_[i].height * compose_scale);
-                }
-
-                Mat K;
-                cameras_scaled[i].K().convertTo(K, CV_32F);
-                Rect roi = warper_->warpRoi(sz, K, cameras_scaled[i].R);
-                corners[i] = roi.tl();
-                sizes[i] = roi.size();
-            }
+            //? FIXME 为何这里不需要从input mask里面warp?
+            seamEstMask.create(seamEstImg.size(), CV_8U);
+            seamEstMask.setTo(Scalar::all(255));
+            warper_->warp(seamEstMask, K, cameras_[i].R, INTER_NEAREST, BORDER_CONSTANT, warpedMasks[i]);
         }
-        if (std::abs(compose_scale - 1) > 1e-1) {
-#if ENABLE_LOG
-            int64 resize_t = getTickCount();
-#endif
-            resize(full_img, img, Size(), compose_scale, compose_scale, INTER_LINEAR_EXACT);
-            INFO("  resize time: " << ((getTickCount() - resize_t) / getTickFrequency()) << " sec");
-        } else
-            img = full_img;
-        full_img.release();
-        Size img_size = img.size();
+        seamEstImg.release();
+        seamEstMask.release();
 
-        INFO(" after resize time: " << ((getTickCount() - compositing_t) / getTickFrequency()) << " sec");
+        // 先曝光补偿
+        exposureCompensator_->feed(warpedCorners, warpedImages, warpedMasks);
+        for (size_t i = 0; i < numImgs_; ++i)
+            exposureCompensator_->apply(int(i), warpedCorners[i], warpedImages[i], warpedMasks[i]);
+
+        // 再寻找缝合线
+        vector<UMat> images_warped_f(numImgs_);
+        for (size_t i = 0; i < numImgs_; ++i)
+            warpedImages[i].convertTo(images_warped_f[i], CV_32F);
+        seamFinder_->find(images_warped_f, warpedCorners, warpedMasks);
+    }
+    warpedImages.clear();
+
+    /// 图像合成
+    INFO(endl << "Compositing...");
+
+    // 由于可能设置了合成图像的分辨率(compose_resol_), 所以要计算在合成图像尺度上的相机参数(cameras_scaled),
+    // 和每帧图像变换后的尺寸(sizes_warped)和左上角坐标(corners)
+    const float compose_work_aspect = static_cast<float>(composeScale_ / registScale_);
+    warper_->setScale(static_cast<float>(warpedImageScale_ * compose_work_aspect));
+    INFO("composeScale_ = " << composeScale_ << ", and compose_work_aspect = " << compose_work_aspect);
+
+    // Update corners and sizes. 更新变换后的图像大小和左上角坐标, 然后初始化blender
+    std::vector<ms::detail::CameraParams> cameras_ComposeScale(cameras_);
+    for (size_t i = 0; i < numImgs_; ++i) {
+        // Update intrinsics
+        cameras_ComposeScale[i].ppx *= compose_work_aspect;
+        cameras_ComposeScale[i].ppy *= compose_work_aspect;
+        cameras_ComposeScale[i].focal *= compose_work_aspect;
+
+        // Update corner and size
+        Size sz = inputImgSize_[i];
+        if (std::abs(composeScale_ - 1) > 1e-1) {
+            sz.width = cvRound(inputImgSize_[i].width * composeScale_);
+            sz.height = cvRound(inputImgSize_[i].height * composeScale_);
+        }
 
         Mat K;
-        cameras_scaled[img_idx].K().convertTo(K, CV_32F);
+        cameras_ComposeScale[i].K().convertTo(K, CV_32F);
 
-#if ENABLE_LOG
-        int64 pt = getTickCount();
-#endif
+        // warp后的图像在pano上的roi
+        Rect roi = warper_->warpRoi(sz, K, cameras_ComposeScale[i].R);
+
+        warpedCorners[i] = roi.tl();
+        warpedSizes[i] = roi.size();
+    }
+    blender_->prepare(warpedCorners, warpedSizes);
+
+    // 开始合成
+    UMat img, img_warped, img_warped_s, mask, mask_warped;  // tmp var
+    UMat dilated_mask, seam_mask;
+    for (size_t j = 0, iend = indices_.size(); j < iend; ++j) {
+        const size_t imgIdx = indices_[j];
+        INFO("Compositing image #" << imgIdx);
+
+        // Read image and resize it if necessary
+        UMat& full_img = inputImages_[imgIdx];
+        if (std::abs(composeScale_ - 1) > 1e-2)
+            resize(full_img, img, Size(), composeScale_, composeScale_, INTER_LINEAR_EXACT);
+        else
+            img = full_img;
+
+        Mat K;
+        cameras_ComposeScale[imgIdx].K().convertTo(K, CV_32F);  // 合成图像尺度下的相机参数前面已经更新过了
+
         // Warp the current image
-        warper_->warp(img, K, cameras_[img_idx].R, INTER_LINEAR_EXACT, BORDER_REFLECT, img_warped);
-        INFO(" warp the current image: " << ((getTickCount() - pt) / getTickFrequency()) << " sec");
-#if ENABLE_LOG
-        pt = getTickCount();
-#endif
+        //! 注意: 差值方式 #InterpolationFlags 需要和 remap() 函数的一致. INTER_LINEAR_EXACT 无法使用
+        warper_->warp(img, K, cameras_[imgIdx].R, INTER_LINEAR, BORDER_REFLECT, img_warped);
+        img_warped.convertTo(img_warped_s, CV_16S);
+        img.release();
+        img_warped.release();
 
         // Warp the current image mask
-        mask.create(img_size, CV_8U);
+        mask.create(img.size(), CV_8U);
         mask.setTo(Scalar::all(255));
-        warper_->warp(mask, K, cameras_[img_idx].R, INTER_NEAREST, BORDER_CONSTANT, mask_warped);
-        INFO(" warp the current image mask: " << ((getTickCount() - pt) / getTickFrequency()) << " sec");
-#if ENABLE_LOG
-        pt = getTickCount();
-#endif
-
-        img_warped.convertTo(img_warped_s, CV_16S);
-        img_warped.release();
-        img.release();
+        warper_->warp(mask, K, cameras_[imgIdx].R, INTER_NEAREST, BORDER_CONSTANT, mask_warped);
         mask.release();
 
-        // Make sure seam mask has proper size
-        dilate(fullMasks_warped[img_idx], dilated_mask, Mat());
-        resize(dilated_mask, seam_mask, mask_warped.size(), 0, 0, INTER_LINEAR_EXACT);
+        // 如果做过缝合线优化, 则保留缝合线附近的mask(warpedMasks[imgIdx])
+        if (doExposureCompensation_ || doSeamOptimization_) {
+            // Make sure seam mask has proper size
+            dilate(warpedMasks[imgIdx], dilated_mask, Mat());
+            resize(dilated_mask, seam_mask, mask_warped.size(), 0, 0, INTER_LINEAR_EXACT);
+            INFO("warpedMasks #" << imgIdx << " size: " << dilated_mask.size());
+            INFO("mask_warped size: " << mask_warped.size());
+            INFO("seam_mask size: " << seam_mask.size());
 
-        bitwise_and(seam_mask, mask_warped, mask_warped);
-
-        INFO(" other: " << ((getTickCount() - pt) / getTickFrequency()) << " sec");
-#if ENABLE_LOG
-        pt = getTickCount();
-#endif
-
-        if (!is_blender_prepared) {
-            blender_->prepare(corners, sizes);
-            is_blender_prepared = true;
+            bitwise_and(seam_mask, mask_warped, mask_warped);  // 只留取缝合线附件的区域
         }
 
-        INFO(" other2: " << ((getTickCount() - pt) / getTickFrequency()) << " sec");
-
         INFO(" feed...");
-#if ENABLE_LOG
-        int64 feed_t = getTickCount();
-#endif
+
         // Blend the current image
-        blender_->feed(img_warped_s, mask_warped, corners[img_idx]);
-        INFO(" feed time: " << ((getTickCount() - feed_t) / getTickFrequency()) << " sec");
-        INFO("Compositing ## time: " << ((getTickCount() - compositing_t) / getTickFrequency()) << " sec");
+        blender_->feed(img_warped_s, mask_warped, warpedCorners[imgIdx]);
+        img_warped_s.release();
+        mask_warped.release();
     }
 
-#if ENABLE_LOG
-    int64 blend_t = getTickCount();
-#endif
-    UMat result;
-    blender_->blend(result, result_mask_);
-    INFO("blend time: " << ((getTickCount() - blend_t) / getTickFrequency()) << " sec");
-
-    INFO("Compositing, time: " << ((getTickCount() - t) / getTickFrequency()) << " sec");
+    // 得到融合结果
+    UMat result, resultMask;
+    blender_->blend(result, resultMask);
 
     // Preliminary result is in CV_16SC3 format, but all values are in [0,255] range,
     // so convert it to avoid user confusing
     result.convertTo(pano, CV_8U);
 
+    if (result.empty())
+        return ERR_STITCH_FAIL;
     return OK;
 }
 
 ImageStitcher::Status ImageStitcher::matchImages()
 {
-    if ((int)fullImages_.size() < 2) {
+    if ((int)numImgs_ < 2) {
         ERROR("Need more images!");
         return ERR_NEED_MORE_IMGS;
     }
 
-    bool is_work_scale_set = false;
-    features_.resize(fullImages_.size());
-    fullImgSize_.resize(fullImages_.size());
+    features_.resize(numImgs_);
+    inputImgSize_.resize(numImgs_);
 
 #if ENABLE_LOG
     INFO("Finding features...");
     int64 t = getTickCount();
 #endif
 
-    vector<UMat> feature_find_imgs(fullImages_.size());
-    vector<UMat> feature_find_masks(fullMasks_.size());
+    MS_DEBUG_TO_DELETE vector<Mat> Homs(numImgs_);
+    vector<UMat> featureExtImgs, featureExtMasks;
+    featureExtImgs.resize(numImgs_);
+    featureExtMasks.resize(numImgs_);
 
-    vector<Mat> Homs(fullImages_.size());
+    // 先确定一下缩放比例, 用最大图像的分辨率确定
+    if (determinScaleByResol_) {
+        double maxArea = 0;
+        for (size_t i = 0; i < numImgs_; ++i)
+            maxArea = inputImages_[i].size().area() > maxArea ? inputImages_[i].size().area() : maxArea;
+
+        if (registResol_ > 0)
+            registScale_ = std::min(1.0, std::sqrt(registResol_ * 1e6 / maxArea));
+        else
+            registScale_ = 1.;
+
+        if (seamScale_ > 0)
+            seamScale_ = std::min(1.0, std::sqrt(seamResol_ * 1e6 / maxArea));
+        else
+            seamScale_ = 1.;
+
+        if (composeResol_ > 0)
+            composeScale_ = std::min(1.0, std::sqrt(composeResol_ * 1e6 / maxArea));
+        else
+            composeScale_ = 1.;
+    }
 
     // 1.缩小图像, 提取特征点
-    for (size_t i = 0; i < fullImages_.size(); ++i) {
-        fullImgSize_[i] = fullImages_[i].size();
+    for (size_t i = 0; i < numImgs_; ++i) {
+        inputImgSize_[i] = inputImages_[i].size();
 
-        if (registrResol_ < 0.) {
-            feature_find_imgs[i] = fullImages_[i];
-            scale_ = 1.;
-            is_work_scale_set = true;
+        resize(inputImages_[i], featureExtImgs[i], Size(), registScale_, registScale_, INTER_LINEAR_EXACT);
+        if (!inputMasks_.empty()) {
+            resize(inputMasks_[i], featureExtMasks[i], Size(), registScale_, registScale_, INTER_NEAREST);
+            ms::detail::computeImageFeatures(featureFinder_, featureExtImgs[i], features_[i],
+                                             featureExtMasks[i]);
         } else {
-            if (!is_work_scale_set) {  // 控制图片处理分辨率
-                scale_ = std::min(1.0, std::sqrt(registrResol_ * 1e6 / fullImgSize_[i].area()));
-                is_work_scale_set = true;
-            }
-            resize(fullImages_[i], feature_find_imgs[i], Size(), scale_, scale_, INTER_LINEAR_EXACT);
+            ms::detail::computeImageFeatures(featureFinder_, featureExtImgs[i], features_[i]);
         }
 
-        if (!fullMasks_.empty()) {
-            resize(fullMasks_[i], feature_find_masks[i], Size(), scale_, scale_, INTER_NEAREST);
-        }
-
-        ms::detail::computeImageFeatures(featureFinder_, feature_find_imgs[i], features_[i],
-                                         feature_find_masks[i]);
         features_[i].img_idx = (int)i;
         INFO("Features in image #" << i << ": " << features_[i].keypoints.size());
 
         if (i != baseIndex_)
-            computeHomography(fullImages_[baseIndex_], fullImages_[i], Homs[i]);
+            computeHomography(inputImages_[baseIndex_], inputImages_[i], Homs[i]);  // Hib
     }
 
-    // Do it to save memory
-    feature_find_imgs.clear();
-    feature_find_masks.clear();
 
 #if ENABLE_LOG
     TIMER("Finding features, time: " << ((getTickCount() - t) / getTickFrequency()) << " sec");
@@ -374,17 +358,16 @@ ImageStitcher::Status ImageStitcher::matchImages()
     INFO("Pairwise matching...");
 #endif
 
-    (*featureMatcher_)(features_, pairwise_matches_, matchingMask_);
-    //    featureMatcher_->collectGarbage();
+    (*featureMatcher_)(features_, pairwise_matches_, matchingMask_);  // Hib
+    featureMatcher_->collectGarbage();
 
 #if ENABLE_LOG
     TIMER("Pairwise matching, time: " << ((getTickCount() - t) / getTickFrequency()) << " sec");
-    for (size_t i = 0; i < fullImages_.size(); ++i) {
-        if (i != baseIndex_)
-            INFO("Homographies diference: (1) " << endl
-                                                << pairwise_matches_[i].H << endl
-                                                << "    (2) " << endl
-                                                << Homs[i]);
+    for (size_t i = 0; i < numImgs_; ++i) {
+        if (i != baseIndex_) {
+            Mat H_inv = Homs[i].inv();
+            INFO("Homographies diference: " << endl << H_inv * pairwise_matches_[i].H << endl);
+        }
     }
 #endif
 
@@ -393,6 +376,12 @@ ImageStitcher::Status ImageStitcher::matchImages()
 
 ImageStitcher::Status ImageStitcher::estimateCameraParams()
 {
+    assert((int)numImgs_ >= 2);
+
+    indices_.resize(numImgs_);  //! TODO
+    for (size_t i = 0; i < numImgs_; ++i)
+        indices_[i] = i;
+
     // estimate homography in global frame
     if (!(*motionEstimator_)(features_, pairwise_matches_, cameras_))
         return ERR_HOMOGRAPHY_EST_FAIL;
@@ -421,10 +410,11 @@ ImageStitcher::Status ImageStitcher::estimateCameraParams()
 
     std::sort(focals.begin(), focals.end());
     if (focals.size() % 2 == 1)
-        warped_image_scale_ = static_cast<float>(focals[focals.size() / 2]);
+        warpedImageScale_ = static_cast<float>(focals[focals.size() / 2]);
     else
-        warped_image_scale_ =
+        warpedImageScale_ =
             static_cast<float>(focals[focals.size() / 2 - 1] + focals[focals.size() / 2]) * 0.5f;
+    INFO("warped_image_scale_ = focal = " << warpedImageScale_);
 
     if (doWaveCorrection_) {
         vector<Mat> rmats;
@@ -439,55 +429,111 @@ ImageStitcher::Status ImageStitcher::estimateCameraParams()
 }
 
 
-ImageStitcher::Status ImageStitcher::warpImages(OutputArray _imgs, OutputArray _masks, vector<Point>& _corners)
+///////////////////////////////
+/// 用法2
+///////////////////////////////
+
+ImageStitcher::Status ImageStitcher::getWarpedImages(OutputArray _imgs, OutputArray _masks, vector<Point>& _corners)
 {
-    numImgs_ = fullImages_.size();
+    // 确保已经计算过变换关系
+    if (warpedImageScale_ == 0 || cameras_.empty())
+        return ERR_CAMERA_PARAMS_ADJUST_FAIL;
+    assert((int)numImgs_ >= 2);
 
-    vector<Point> corners(numImgs_);
-    vector<UMat> images_warped(numImgs_), masks_warped(numImgs_);
-    vector<Size> sizes_warped(numImgs_);
+    vector<UMat> warpedImages(numImgs_);
+    vector<UMat> warpedMasks(numImgs_);
+    vector<Point> warpedCorners(numImgs_);
 
-    // Prepare images masks
-    vector<UMat> masks(numImgs_);
-    for (size_t i = 0; i < numImgs_; ++i) {
-        masks[i].create(fullImages_[i].size(), CV_8U);
-        masks[i].setTo(Scalar::all(255));
-    }
+    /// 缝合线优化
+    if (doExposureCompensation_ || doSeamOptimization_) {
+        INFO("Warping images for seamless process (auxiliary)... ");
 
-    // Warp images and their masks
-    const double compose_scale = 1.;
-    const double compose_work_aspect = compose_scale / scale_;
-    INFO("compose_scale: " << compose_scale);
-    INFO("compose_work_aspect: " << compose_work_aspect);
+        const float seam_work_aspect = static_cast<float>(seamScale_ / registScale_);
+        INFO("seamScale_ = " << seamScale_ << ", and seam_work_aspect = " << seam_work_aspect);
 
-    warper_->setScale(compose_work_aspect);
+        warper_->setScale(static_cast<float>(warpedImageScale_ * seam_work_aspect));
 
-    // Update corners and sizes
-    for (size_t i = 0; i < numImgs_; ++i) {
-        // Update intrinsics
-        cameras_[i].focal *= compose_work_aspect;
-        cameras_[i].ppx *= compose_work_aspect;
-        cameras_[i].ppy *= compose_work_aspect;
+        // 在更低的尺度上估计缝合线
+        UMat seamEstImg, seamEstMask;
+        for (size_t i = 0; i < numImgs_; ++i) {
+            Mat_<float> K;
+            cameras_[i].K().convertTo(K, CV_32F);
+            K(0, 0) *= seam_work_aspect;
+            K(0, 2) *= seam_work_aspect;
+            K(1, 1) *= seam_work_aspect;
+            K(1, 2) *= seam_work_aspect;
 
-        // Update corner and size
-        Size sz = fullImgSize_[i];
-        if (std::abs(compose_scale - 1) > 1e-1) {
-            sz.width = cvRound(fullImgSize_[i].width * compose_scale);
-            sz.height = cvRound(fullImgSize_[i].height * compose_scale);
+            resize(inputImages_[i], seamEstImg, Size(), seamScale_, seamScale_, INTER_LINEAR_EXACT);
+            warper_->warp(seamEstImg, K, cameras_[i].R, INTER_LINEAR, BORDER_REFLECT, warpedImages[i]);
+
+            //? FIXME 为何这里不需要从input mask里面warp?
+            seamEstMask.create(seamEstImg.size(), CV_8U);
+            seamEstMask.setTo(Scalar::all(255));
+            warper_->warp(seamEstMask, K, cameras_[i].R, INTER_NEAREST, BORDER_CONSTANT, warpedMasks[i]);
         }
+        seamEstImg.release();
+        seamEstMask.release();
+
+        // 先曝光补偿
+        exposureCompensator_->feed(warpedCorners, warpedImages, warpedMasks);
+        for (size_t i = 0; i < numImgs_; ++i)
+            exposureCompensator_->apply(int(i), warpedCorners[i], warpedImages[i], warpedMasks[i]);
+
+        // 再寻找缝合线
+        vector<UMat> images_warped_f(numImgs_);
+        for (size_t i = 0; i < numImgs_; ++i)
+            warpedImages[i].convertTo(images_warped_f[i], CV_32F);
+        seamFinder_->find(images_warped_f, warpedCorners, warpedMasks);
+    }
+    warpedImages.clear();
+
+    /// 在合成尺度上变换图像
+    INFO(endl << "Warping on composation sacale...");
+
+    const float compose_work_aspect = static_cast<float>(composeScale_ / registScale_);
+    warper_->setScale(static_cast<float>(warpedImageScale_ * compose_work_aspect));
+    INFO("composeScale_ = " << composeScale_ << ", and compose_work_aspect = " << compose_work_aspect);
+
+    UMat img, mask, warpedMask;
+    std::vector<ms::detail::CameraParams> cameras_ComposeScale(cameras_);
+    for (size_t i = 0; i < numImgs_; ++i) {
+        cameras_ComposeScale[i].ppx *= compose_work_aspect;
+        cameras_ComposeScale[i].ppy *= compose_work_aspect;
+        cameras_ComposeScale[i].focal *= compose_work_aspect;
+
+        UMat& full_img = inputImages_[i];
+        if (std::abs(composeScale_ - 1) > 1e-2)
+            resize(full_img, img, Size(), composeScale_, composeScale_, INTER_LINEAR_EXACT);
+        else
+            img = full_img;
 
         Mat K;
-        cameras_[i].K().convertTo(K, CV_32F);
-        Rect roi = warper_->warpRoi(sz, K, cameras_[i].R);
-        INFO("scaled corner to composited corner: " << corners[i] << " ===> " << roi.tl());
-        INFO("scaled size to composited size: " << sz << " ===> " << roi.size());
-        corners_[i] = roi.tl();
-        warpedImgSize_[i] = roi.size();
+        cameras_ComposeScale[i].K().convertTo(K, CV_32F);
+
+        // Warp the current image
+        warpedCorners[i] = warper_->warp(img, K, cameras_[i].R, INTER_LINEAR, BORDER_REFLECT, warpedImages[i]);
+        img.release();
+
+        // Warp the current image mask
+        mask.create(img.size(), CV_8U);
+        mask.setTo(Scalar::all(255));
+        warper_->warp(mask, K, cameras_[i].R, INTER_NEAREST, BORDER_CONSTANT, warpedMask);
+        mask.release();
+
+        // 如果做过缝合线优化, 则保留缝合线附近的mask(warpedMasks[imgIdx])
+        if (doExposureCompensation_ || doSeamOptimization_) {
+            Mat dilated_mask, seam_mask;
+            dilate(warpedMasks[i], dilated_mask, Mat());
+            resize(dilated_mask, seam_mask, warpedMask.size(), 0, 0, INTER_LINEAR_EXACT);
+            bitwise_and(seam_mask, warpedMask, warpedMask);  // 只留取缝合线附件的区域
+        }
+        warpedMasks[i] = warpedMask.clone();
+        warpedMask.release();
     }
 
-    _imgs.assign(images_warped);
-    _masks.assign(masks_warped);
-    _corners = corners;
+    _imgs.assign(warpedImages);
+    _masks.assign(warpedMasks);
+    _corners = warpedCorners;
 
     return OK;
 }
@@ -532,12 +578,7 @@ ImageStitcher::Status ImageStitcher::computeHomography(InputArray img1, InputArr
     points2.reserve(matches.size());
 
     for (vector<DMatch>::const_iterator it = matches.begin(); it != matches.end(); ++it) {
-        // float x = keypoints1[it->queryIdx].pt.x;
-        // float y = keypoints1[it->queryIdx].pt.y;
         points1.push_back(keypoints1[it->queryIdx].pt);
-
-        // x = keypoints2[it->trainIdx].pt.x;
-        // y = keypoints2[it->trainIdx].pt.y;
         points2.push_back(keypoints2[it->trainIdx].pt);
     }
     if (points1.empty() || points2.empty()) {

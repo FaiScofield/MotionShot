@@ -79,7 +79,7 @@ MotionShot::Status MotionShot::run()
 MotionShot::Status MotionShot::estimateTransform()
 {
     stitcher_->estimateTransform(inputImages_, inputMasks_);
-    stitcher_->warpImages(warpedImages_, warpedMasks_, corners_);  //! TODO
+    stitcher_->getWarpedImages(warpedImages_, warpedMasks_, corners_);  //! TODO
 
     return OK;
 }

@@ -92,7 +92,7 @@ public:
      * @brief 获得中间结果.
      * 实际上在feed()以后融合已经做完了, 该函数可以不用调用blend()获取feed()后的结果
      */
-    virtual Mat getMiddleResult(InputOutputArray dst, InputOutputArray dst_mask);
+    virtual void getMiddleResult(InputOutputArray dst, InputOutputArray dst_mask);
 
     Mat getOverlappedEdges() const { return overlapped_edges_; }
     Mat getOverlappedEdgesMask(int size) const;
@@ -172,6 +172,8 @@ public:
     void prepare(Rect dst_roi) override;
     void feed(InputArray img, InputArray mask, Point tl) override;
     void blend(InputOutputArray dst, InputOutputArray dst_mask) override;
+
+    void getMiddleResult(InputOutputArray dst, InputOutputArray dst_mask) override;
 
 private:
     int actual_num_bands_, num_bands_;    // 实际金字塔层数

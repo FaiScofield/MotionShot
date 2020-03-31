@@ -33,7 +33,7 @@ public:
     inline vector<Mat> getForeground() const { return foregrounds_; }
 
 
-    Status setInputs(InputArrayOfArrays imgs, InputArrayOfArrays maks = cv::noArray());
+    Status setInputs(InputArrayOfArrays imgs, InputArrayOfArrays masks = cv::noArray());
 
     Status run();
 

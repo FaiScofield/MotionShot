@@ -38,7 +38,7 @@ void ReadImageNamesFromFolder(const string& folder, vector<string>& names)
         cerr << "[Error] No image data in the folder!" << endl;
         return;
     } else {
-        cout << "[Info ] Read " << vImageNames.size() << " images in " << folder << endl;
+        cout << "[INFO ] Read " << vImageNames.size() << " images in " << folder << endl;
     }
 
     vImageNames.shrink_to_fit();
@@ -115,7 +115,7 @@ void ReadGroundtruthFromFolder_lasiesta(const string& folder, vector<Mat>& imgs)
         cerr << "[Error] No gt image data in " << folder << endl;
         return;
     } else {
-        cout << "[Info ] Read " << allImages.size() << " gt images in " << folder << endl;
+        cout << "[INFO ] Read " << allImages.size() << " gt images in " << folder << endl;
     }
 
     imgs.reserve(allImages.size());
@@ -144,7 +144,7 @@ void ReadImageSequence_lasiesta(const string& folder, vector<Mat>& imgs, vector<
     gts = vector<Mat>(allGts.begin() + S, allGts.begin() + S + N);
 
     assert(gts.size() == imgs.size());
-    cout << "[Info ] Get " << imgs.size() << " images from tatal." << endl;
+    cout << "[INFO ] Get " << imgs.size() << " images from tatal." << endl;
 }
 
 void ReadImageSequence_huawei(const string& folder, vector<Mat>& imgs, int beginIdx, int num)
@@ -178,7 +178,7 @@ void ReadImageSequence_huawei(const string& folder, vector<Mat>& imgs, int begin
         cerr << "[Error] No image data in " << folder << endl;
         return;
     } else {
-        cout << "[Info ] Read tatal " << allImages.size() << " images in " << folder << endl;
+        cout << "[INFO ] Read tatal " << allImages.size() << " images in " << folder << endl;
     }
     assert(beginIdx < (int)allImages.size());
 
@@ -193,12 +193,14 @@ void ReadImageSequence_huawei(const string& folder, vector<Mat>& imgs, int begin
         if (idx - S >= N)
             break;
     }
-    cout << "[Info ] Get " << imgs.size() << " images from tatal." << endl;
+    cout << "[INFO ] Get " << imgs.size() << " images from tatal." << endl;
     assert((int)imgs.size() == N);
 }
 
 void ReadImageSequence(const string& prefix, const string& suffix, vector<Mat>& imgs, int beginIdx, int num)
 {
+    assert(num > 0);
+
     imgs.clear();
     imgs.reserve(num);
 
@@ -220,7 +222,7 @@ void ReadImageSequence(const string& prefix, const string& suffix, vector<Mat>& 
         }
     }
 
-    cout << "[Info ] Read " << imgs.size() << " images in the sequence of the foler " << prefix << endl;
+    cout << "[INFO ] Read " << imgs.size() << " images in the sequence of the foler " << prefix << endl;
 }
 
 void ReadImagesFromVideo(const string& video, vector<Mat>& imgs)
@@ -241,7 +243,7 @@ void ReadImagesFromVideo(const string& video, vector<Mat>& imgs)
     imgs.shrink_to_fit();
     capture.release();
 
-    cout << "[Info ] Read " << imgs.size() << " images from the video." << endl;
+    cout << "[INFO ] Read " << imgs.size() << " images from the video." << endl;
 }
 
 void ReadImageSequence_video(const string& video, vector<Mat>& imgs, int beginIdx, int num)
@@ -257,7 +259,7 @@ void ReadImageSequence_video(const string& video, vector<Mat>& imgs, int beginId
     const int N = num <= 0 ? allImages.size() - S : min(num, static_cast<int>(allImages.size()) - S);
     imgs = vector<Mat>(allImages.begin() + S, allImages.begin() + S + N);
 
-    cout << "[Info ] Get " << imgs.size() << " images from tatal (from video)." << endl;
+    cout << "[INFO ] Get " << imgs.size() << " images from tatal (from video)." << endl;
 }
 
 void ReadGroundtruthRectFromFolder(const string& folder, const string& suffix, vector<Mat>& masks,
@@ -307,7 +309,7 @@ void ReadGroundtruthRectFromFolder(const string& folder, const string& suffix, v
         vMasks.push_back(imread(gtFile, IMREAD_GRAYSCALE));
     }
 
-    cout << "[Info ] Read " << vMasks.size() << " gt files in " << folder << endl;
+    cout << "[INFO ] Read " << vMasks.size() << " gt files in " << folder << endl;
 
     masks.swap(vMasks);
 }

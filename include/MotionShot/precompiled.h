@@ -44,6 +44,9 @@ using cv::InputOutputArrayOfArrays;
 #define ERROR(msg) (std::cerr << "\033[31m[ERROR] " << msg << "\033[0m (in file \"" \
                     << __FILE__ << "\", at line " << __LINE__ << ")" << std::endl)
 
-
+#ifndef MS_ABANDON
+#define MS_ABANDON
+#define MS_DEBUG_TO_DELETE MS_ABANDON
+#endif
 
 #endif // PRECOMPILED_H
