@@ -103,7 +103,7 @@ int main(int argc, char* argv[])
     vector<Mat> vImgsToProcess;
     vector<int> vIdxToProcess;
     vector<vector<int>> vvIdxPerIter;
-    extractImagesToStitch(vImages, vImgsToProcess, vIdxToProcess, vvIdxPerIter, minFores, maxFores);
+    ExtractImagesToStitch(vImages, vImgsToProcess, vIdxToProcess, vvIdxPerIter, minFores, maxFores);
 
     timer.stop();
     TIMER("系统初始化耗时(s): " << timer.getTimeSec());
@@ -314,7 +314,7 @@ int main(int argc, char* argv[])
             imshow("contour & blob & ForeMaskPrecise erode", tmp3);
 
             // 过渡边缘
-            smoothMaskWeightEdge(maxBlobMask, maxBlobMask, 3);
+            SmoothMaskWeightEdge(maxBlobMask, maxBlobMask, 3);
             vForeMaskPrecise.push_back(maxBlobMask);
 
             waitKey(2000);
@@ -327,7 +327,7 @@ int main(int argc, char* argv[])
                 blobMask(vBlobs[0]).setTo(255);
                 bitwise_and(blobMask, diff, blobMask);
                 erode(blobMask, blobMask, kernel3);
-                smoothMaskWeightEdge(blobMask, blobMask, 5);
+                SmoothMaskWeightEdge(blobMask, blobMask, 5);
                 vForeMaskPrecise[0] = blobMask;
 //                imshow("first blobMask", blobMask);
 //                waitKey(0);
@@ -412,7 +412,7 @@ int main(int argc, char* argv[])
         blender2->prepare(dis_roi);
 
         Mat foregroundMask_final, backgroundMast_final, maskFinal;
-        smoothMaskWeightEdge(foregroundMask, foregroundMask_final, 7); // 过渡边缘
+        SmoothMaskWeightEdge(foregroundMask, foregroundMask_final, 7); // 过渡边缘
         bitwise_not(foregroundMask_final, backgroundMast_final);
 
         hconcat(foregroundMask_final, backgroundMast_final, maskFinal);

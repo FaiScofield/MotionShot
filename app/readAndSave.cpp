@@ -1,4 +1,4 @@
-#include "MotionShoter/utility.h"
+#include "utility.h"
 #include <iostream>
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
@@ -122,7 +122,7 @@ int main(int argc, char* argv[])
                              "{output    o| |output folder}"
                              "{suffix    x|jpg|valid type: \"png\", \"jpg\", \"jpeg\", \"bmp\"}"
                              "{scale     c|1|scale to resize image in output}"
-                             "{start     a|0|start index for image sequence}"
+                             "{begin     a|0|start index for image sequence}"
                              "{end       e|-1|end index for image sequence}"
                              "{mark      m|false|mark the foreground area}"
                              "{help      h|false|show help message}");
@@ -136,15 +136,15 @@ int main(int argc, char* argv[])
     const String str_folder = parser.get<String>("folder");
     const String str_output = parser.get<String>("output");
     double scale = parser.get<double>("scale");
-    int start = parser.get<int>("start");
-    int end = parser.get<int>("end");
+    int beginIdx = parser.get<int>("begin");
+    int endIdx = parser.get<int>("end");
     bool mark = parser.get<bool>("mark");
     cout << " - type = " << str_type << endl;
     cout << " - folder = " << str_folder << endl;
     cout << " - output = " << str_output << endl;
     cout << " - scale = " << scale << endl;
-    cout << " - startIndex = " << start << endl;
-    cout << " - endIndex = " << end << endl;
+    cout << " - beginIndex = " << beginIdx << endl;
+    cout << " - endIndex = " << endIdx << endl;
     cout << " - mark = " << mark << endl;
 
     const string commond = "mkdir -p " + str_output;
@@ -154,28 +154,28 @@ int main(int argc, char* argv[])
     InputType inputType;
     if (str_type == "video" || str_type == "VIDEO") {
         inputType = VIDEO;
-        ReadImageSequence_video(str_folder, vImages, start, end - start + 1);
+        ReadImageSequence_video(str_folder, vImages, beginIdx, endIdx - beginIdx + 1);
     } else if (str_type == "huawei" || str_type == "HUAWEI") {
         inputType = HUAWEI;
-        ReadImageSequence_huawei(str_folder, vImages, start, end - start + 1);
+        ReadImageSequence_huawei(str_folder, vImages, beginIdx, endIdx - beginIdx + 1);
     } else if (str_type == "sequence" || str_type == "SEQUENCE") {
         inputType = SEQUENCE;
         const String str_suffix = parser.get<String>("suffix");
         cout << " - suffix = " << str_suffix << endl;
-        ReadImageSequence(str_folder, str_suffix, vImages, start, end - start + 1);
+        ReadImageSequence(str_folder, str_suffix, vImages, beginIdx, endIdx - beginIdx + 1);
     } else {
         cerr << "[Error] Unknown input type for " << str_type << endl;
         return -1;
     }
 
-    resizeFlipRotateImages(vImages, scale);
+    ResizeFlipRotateImages(vImages, scale);
 
     const size_t N = vImages.size();
 
     vector<int> params{/*IMWRITE_JPEG_QUALITY*/IMWRITE_PNG_COMPRESSION};
     if (mark) {
         const string winName = "Image Sequence";
-        namedLargeWindow(winName);
+        NamedLargeWindow(winName);
 //        namedWindow(winName, WINDOW_AUTOSIZE);
 
         string outConfigFile = str_output + "/rect_param.txt";

@@ -55,7 +55,7 @@ void OpticalFlower::apply(const Mat& img, Mat& mask)
     }
 
     Mat flowColor;
-    showFlow(_flow, flowColor);
+    ShowFlow(_flow, flowColor);
     //    imshow("flowColor", flowColor);
     //    waitKey(30);
 
@@ -196,25 +196,25 @@ void OpticalFlower::calcOpticalFlowSingleLevel(const cv::Mat& img1, const cv::Ma
                 for (int y = -half_patch_size; y < half_patch_size; y++) {
                     // TODO START YOUR CODE HERE (~8 lines)
                     double error = 0;
-                    error = -getPixelValue(img1, kp.pt.x + x, kp.pt.y + y) +
-                            getPixelValue(img2, kp.pt.x + x + dx, kp.pt.y + y + dy);
+                    error = -GetPixelValue(img1, kp.pt.x + x, kp.pt.y + y) +
+                            GetPixelValue(img2, kp.pt.x + x + dx, kp.pt.y + y + dy);
                     Eigen::Vector2d J = Eigen::Vector2d::Zero();  // Jacobian
                     if (inverse == false) {
                         // Forward Jacobian
-                        J[0] = (getPixelValue(img2, kp.pt.x + x + dx + 1, kp.pt.y + y + dy) -
-                                getPixelValue(img2, kp.pt.x + x + dx - 1, kp.pt.y + y + dy)) /
+                        J[0] = (GetPixelValue(img2, kp.pt.x + x + dx + 1, kp.pt.y + y + dy) -
+                                GetPixelValue(img2, kp.pt.x + x + dx - 1, kp.pt.y + y + dy)) /
                                2;
-                        J[1] = (getPixelValue(img2, kp.pt.x + x + dx, kp.pt.y + y + dy + 1) -
-                                getPixelValue(img2, kp.pt.x + x + dx, kp.pt.y + y + dy - 1)) /
+                        J[1] = (GetPixelValue(img2, kp.pt.x + x + dx, kp.pt.y + y + dy + 1) -
+                                GetPixelValue(img2, kp.pt.x + x + dx, kp.pt.y + y + dy - 1)) /
                                2;
                     } else {
                         // Inverse Jacobian
                         // NOTE this J does not change when dx, dy is updated, so we can store it and only compute error
-                        J[0] = (getPixelValue(img1, kp.pt.x + x + 1, kp.pt.y + y) -
-                                getPixelValue(img1, kp.pt.x + x - 1, kp.pt.y + y)) /
+                        J[0] = (GetPixelValue(img1, kp.pt.x + x + 1, kp.pt.y + y) -
+                                GetPixelValue(img1, kp.pt.x + x - 1, kp.pt.y + y)) /
                                2;
-                        J[1] = (getPixelValue(img1, kp.pt.x + x, kp.pt.y + y + 1) -
-                                getPixelValue(img1, kp.pt.x + x, kp.pt.y + y - 1)) /
+                        J[1] = (GetPixelValue(img1, kp.pt.x + x, kp.pt.y + y + 1) -
+                                GetPixelValue(img1, kp.pt.x + x, kp.pt.y + y - 1)) /
                                2;
                     }
 

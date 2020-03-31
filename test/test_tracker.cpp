@@ -72,7 +72,7 @@ int main(int argc, char *argv[])
         ReadImageSequence_video(str_folder, vImages, start, num);
         scale = 0.4;
     }
-    resizeFlipRotateImages(vImages, scale, flip, rotate);
+    ResizeFlipRotateImages(vImages, scale, flip, rotate);
     cout << " - start = " << max(0, start) << endl;
     cout << " - num = " << vImages.size() << endl;
 
@@ -158,7 +158,7 @@ int main(int argc, char *argv[])
         int binSize = 5;
         Mat flowColor, flowGray, hist, histGraph;
         //flowToColor(flowi, flowColor);
-        drawFlowAndHist(flowi, flowGray, hist, histGraph, 1, binSize);
+        DrawFlowAndHist(flowi, flowGray, hist, histGraph, 1, binSize);
 
         // 对flow进行二值化
 //        double maxValue, minValue;

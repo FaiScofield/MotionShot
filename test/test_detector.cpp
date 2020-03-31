@@ -80,7 +80,7 @@ int main(int argc, char* argv[])
         return -1;
     }
     cout << " - Image size input = " << vImages[0].size() << endl;
-    resizeFlipRotateImages(vImages, scale);
+    ResizeFlipRotateImages(vImages, scale);
 
 
     BaseMotionDetector* detector;
@@ -154,7 +154,7 @@ int main(int argc, char* argv[])
         detector->apply(frame, diff);
         if (diff.empty())
             continue;
-        namedLargeWindow("mask");
+        NamedLargeWindow("mask");
         imshow("mask", diff);
 
         // find contours
@@ -238,7 +238,7 @@ int main(int argc, char* argv[])
         vconcat(frame_contours, diff_blobs, tmp);
         output = tmp;
 
-        namedLargeWindow("result");
+        NamedLargeWindow("result");
         imshow("result", output);
         if (write)
             writer.write(output);

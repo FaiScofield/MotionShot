@@ -5,7 +5,7 @@
 */
 
 #include "ImageStitcher/ImageStitcher.h"
-#include "MotionShoter/utility.h"
+#include "utility.h"
 #include <boost/filesystem.hpp>
 #include <iostream>
 #include <opencv2/bgsegm.hpp>
@@ -75,7 +75,7 @@ int main(int argc, char* argv[])
         return -1;
     }
     cout << " - Image size input = " << vImages[0].size() << endl;
-    resizeFlipRotateImages(vImages, scale);
+    ResizeFlipRotateImages(vImages, scale);
 
     // generate subtractor
     Ptr<BackgroundSubtractor> subtractor;
@@ -188,7 +188,7 @@ int main(int argc, char* argv[])
             cerr << "   First Frame! i = " << i << endl;
             continue;
         }
-        namedLargeWindow("orignal diff");
+        NamedLargeWindow("orignal diff");
         imshow("orignal diff", diff);
         const string fileName = "/home/vance/output/ms/rough_fore_" + to_string(i + 1) + ".jpg";
         imwrite(fileName, diff);
@@ -202,7 +202,7 @@ int main(int argc, char* argv[])
         morphologyEx(diff, diff, MORPH_OPEN, kernel2);
         morphologyEx(diff, diff, MORPH_CLOSE, kernel1); //
 
-        namedLargeWindow("filter diff");
+        NamedLargeWindow("filter diff");
         imshow("filter diff", diff);
 
         // find contours
@@ -244,7 +244,7 @@ int main(int argc, char* argv[])
             putText(diff_blobs, txt, blobs[j].tl(), 1, 1., Scalar(0, 0, 255));
         }
         vconcat(frame_contours, diff_blobs, output);
-        namedLargeWindow("result");
+        NamedLargeWindow("result");
         imshow("result", /*diff*/ output);
 
         const string outName = "/home/vance/output/ms/fore-" + to_string(i + 1) + ".jpg";

@@ -1,4 +1,4 @@
-#include "MotionShoter/utility.h"
+#include "utility.h"
 #include "opencv2/highgui.hpp"
 #include "opencv2/imgcodecs.hpp"
 #include "opencv2/opencv_modules.hpp"
@@ -468,7 +468,7 @@ int main(int argc, char* argv[])
     }
 #define SHOW_MATCH_RESULT 1
 #if SHOW_MATCH_RESULT
-    namedLargeWindow("Match Result", largeWin);
+    NamedLargeWindow("Match Result", largeWin);
     Mat& baseFrame = images[BFI];
     for (int i = 0; i < num_images; ++i) {
         if (i == BFI)

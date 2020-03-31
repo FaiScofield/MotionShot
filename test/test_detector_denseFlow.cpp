@@ -11,7 +11,7 @@
 #include <iostream>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
-#include <opencv2/stitching.hpp>
+//#include <opencv2/stitching.hpp>
 #include <opencv2/video/video.hpp>
 #include <opencv2/photo.hpp>
 
@@ -77,7 +77,7 @@ int main(int argc, char* argv[])
     } else if (inputType == VIDEO) {
         ReadImagesFromVideo(str_folder, vImages);
     }
-    resizeFlipRotateImages(vImages, scale, flip, rotate);
+    ResizeFlipRotateImages(vImages, scale, flip, rotate);
     timer.stop();
     cout << "[Timer] Cost time in reading datas: " << timer.getTimeSec()  << endl;
 

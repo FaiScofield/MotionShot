@@ -1,18 +1,13 @@
 #include "utility.h"
+
 #include <boost/algorithm/string_regex.hpp>
 #include <boost/filesystem.hpp>
 #include <fstream>
-#include <iostream>
 #include <map>
 #include <set>
-#include <string>
 #include <unordered_map>
-#include <vector>
 
-#include <opencv2/highgui/highgui.hpp>
 #include <opencv2/video/video.hpp>
-
-#define ENABLE_DEBUG 1
 
 namespace ms
 {
@@ -20,16 +15,6 @@ namespace ms
 using namespace cv;
 using namespace std;
 namespace bf = boost::filesystem;
-
-void namedLargeWindow(const std::string& title, bool flag)
-{
-    if (flag) {
-        namedWindow(title, WINDOW_KEEPRATIO | WINDOW_NORMAL);
-        resizeWindow(title, Size(1440, 1080));
-    } else {
-        namedWindow(title, WINDOW_AUTOSIZE);
-    }
-}
 
 void ReadImageNamesFromFolder(const string& folder, vector<string>& names)
 {
@@ -138,7 +123,7 @@ void ReadGroundtruthFromFolder_lasiesta(const string& folder, vector<Mat>& imgs)
         imgs.push_back(imread(it->second, IMREAD_COLOR));
 }
 
-void ReadImageSequence_lasiesta(const string& folder, vector<Mat>& imgs, vector<Mat>& gts, int startIndex, int num)
+void ReadImageSequence_lasiesta(const string& folder, vector<Mat>& imgs, vector<Mat>& gts, int beginIdx, int num)
 {
     imgs.clear();
 
@@ -151,9 +136,9 @@ void ReadImageSequence_lasiesta(const string& folder, vector<Mat>& imgs, vector<
 
     ReadImagesFromFolder_lasiesta(folder, allImages);
     ReadGroundtruthFromFolder_lasiesta(gtFolder, allGts);
-    assert(startIndex < allImages.size());
+    assert(beginIdx < (int)allImages.size());
 
-    const int S = max(0, startIndex);
+    const int S = max(0, beginIdx);
     const int N = num <= 0 ? allImages.size() - S : min(num, static_cast<int>(allImages.size()) - S);
     imgs = vector<Mat>(allImages.begin() + S, allImages.begin() + S + N);
     gts = vector<Mat>(allGts.begin() + S, allGts.begin() + S + N);
@@ -162,7 +147,7 @@ void ReadImageSequence_lasiesta(const string& folder, vector<Mat>& imgs, vector<
     cout << "[Info ] Get " << imgs.size() << " images from tatal." << endl;
 }
 
-void ReadImageSequence_huawei(const string& folder, vector<Mat>& imgs, int startIndex, int num)
+void ReadImageSequence_huawei(const string& folder, vector<Mat>& imgs, int beginIdx, int num)
 {
     imgs.clear();
 
@@ -195,9 +180,9 @@ void ReadImageSequence_huawei(const string& folder, vector<Mat>& imgs, int start
     } else {
         cout << "[Info ] Read tatal " << allImages.size() << " images in " << folder << endl;
     }
-    assert(startIndex < allImages.size());
+    assert(beginIdx < (int)allImages.size());
 
-    const int S = max(0, startIndex);
+    const int S = max(0, beginIdx);
     const int N = num <= 0 ? allImages.size() - S : min(num, static_cast<int>(allImages.size()) - S);
     int idx = 0;
     imgs.reserve(N);
@@ -209,11 +194,10 @@ void ReadImageSequence_huawei(const string& folder, vector<Mat>& imgs, int start
             break;
     }
     cout << "[Info ] Get " << imgs.size() << " images from tatal." << endl;
-    assert(imgs.size() == N);
+    assert((int)imgs.size() == N);
 }
 
-
-void ReadImageSequence(const string& prefix, const string& suffix, vector<Mat>& imgs, int startIndex, int num)
+void ReadImageSequence(const string& prefix, const string& suffix, vector<Mat>& imgs, int beginIdx, int num)
 {
     imgs.clear();
     imgs.reserve(num);
@@ -224,7 +208,7 @@ void ReadImageSequence(const string& prefix, const string& suffix, vector<Mat>& 
     if (suf.front() != '.')
         suf = "." + suf;
 
-    for (int i = startIndex, iend = startIndex + num; i < iend; ++i) {
+    for (int i = beginIdx, iend = beginIdx + num; i < iend; ++i) {
         const string imgName = pre + to_string(i) + suf;
         Mat img = imread(imgName, IMREAD_COLOR);
         if (img.empty()) {
@@ -260,16 +244,16 @@ void ReadImagesFromVideo(const string& video, vector<Mat>& imgs)
     cout << "[Info ] Read " << imgs.size() << " images from the video." << endl;
 }
 
-void ReadImageSequence_video(const string& video, vector<Mat>& imgs, int startIndex, int num)
+void ReadImageSequence_video(const string& video, vector<Mat>& imgs, int beginIdx, int num)
 {
     imgs.clear();
     imgs.reserve(num);
 
     vector<Mat> allImages;
     ReadImagesFromVideo(video, allImages);
-    assert(startIndex < allImages.size());
+    assert(beginIdx < (int)allImages.size());
 
-    const int S = max(0, startIndex);
+    const int S = max(0, beginIdx);
     const int N = num <= 0 ? allImages.size() - S : min(num, static_cast<int>(allImages.size()) - S);
     imgs = vector<Mat>(allImages.begin() + S, allImages.begin() + S + N);
 
@@ -277,9 +261,9 @@ void ReadImageSequence_video(const string& video, vector<Mat>& imgs, int startIn
 }
 
 void ReadGroundtruthRectFromFolder(const string& folder, const string& suffix, vector<Mat>& masks,
-                                   vector<Rect>& rects, int startIndex, int num)
+                                   vector<Rect>& rects, int beginIdx, int num)
 {
-    const int endIdx = startIndex + num - 1;
+    const int endIdx = beginIdx + num - 1;
 
     string pre, suf;
     if (folder.back() != '/')
@@ -318,7 +302,7 @@ void ReadGroundtruthRectFromFolder(const string& folder, const string& suffix, v
 
     vector<Mat> vMasks;
     vMasks.reserve(num);
-    for (int i = startIndex; i <= endIdx; ++i) {
+    for (int i = beginIdx; i <= endIdx; ++i) {
         const string gtFile = pre + to_string(i) + suf;
         vMasks.push_back(imread(gtFile, IMREAD_GRAYSCALE));
     }
@@ -328,7 +312,7 @@ void ReadGroundtruthRectFromFolder(const string& folder, const string& suffix, v
     masks.swap(vMasks);
 }
 
-void colorMask2Gray(const vector<Mat>& colors, vector<Mat>& grays)
+void ColorMask2Gray(const vector<Mat>& colors, vector<Mat>& grays)
 {
     assert(!colors.empty());
 
@@ -343,7 +327,7 @@ void colorMask2Gray(const vector<Mat>& colors, vector<Mat>& grays)
     grays.swap(vGrays);
 }
 
-void resizeFlipRotateImages(vector<Mat>& imgs, double scale, int flip, int rotate)
+void ResizeFlipRotateImages(vector<Mat>& imgs, double scale, int flip, int rotate)
 {
     assert(!imgs.empty());
 
@@ -387,7 +371,7 @@ void resizeFlipRotateImages(vector<Mat>& imgs, double scale, int flip, int rotat
     }
 }
 
-void extractImagesToStitch(const vector<Mat>& vImages, vector<Mat>& vImagesToProcess, vector<int>& vIdxToProcess,
+void ExtractImagesToStitch(const vector<Mat>& vImages, vector<Mat>& vImagesToProcess, vector<int>& vIdxToProcess,
                            vector<vector<int>>& vvIdxPerIter, int minFores, int maxFores)
 {
     assert(minFores > 2 && minFores <= maxFores);
@@ -422,7 +406,7 @@ void extractImagesToStitch(const vector<Mat>& vImages, vector<Mat>& vImagesToPro
         }
         cout << " 实际个数 = " << vIdxThisIter.size();
 
-        if (vIdxThisIter.size() > k) {
+        if ((int)vIdxThisIter.size() > k) {
             vIdxThisIterSubset = vector<int>(vIdxThisIter.begin(), vIdxThisIter.begin() + k);
             cout << ", 实际个数过多, 去除最后几帧." << endl;
         } else {
@@ -438,7 +422,647 @@ void extractImagesToStitch(const vector<Mat>& vImages, vector<Mat>& vImagesToPro
         vImagesToProcess.push_back(vImages[vIdxToProcess[i]]);
 }
 
-void makeColorWheel(vector<Scalar>& colorwheel)
+
+/**
+ * @brief resultRoi 根据多个输入的图像/ROI区域, 生成一个覆盖了所有图像/ROI子区域的大区域
+ * @param corners   多个图像/ROI区域的左上角坐标
+ * @param images    多个图像对应的尺寸
+ * @param sizes     多个ROI区域对应的尺寸
+ * @return  返回覆盖了所有图像/ROI的大区域
+ */
+Rect ResultRoi(const vector<Point>& corners, const vector<Size>& sizes)
+{
+    CV_Assert(sizes.size() == corners.size());
+    Point tl(std::numeric_limits<int>::max(), std::numeric_limits<int>::max());
+    Point br(std::numeric_limits<int>::min(), std::numeric_limits<int>::min());
+    for (size_t i = 0; i < corners.size(); ++i) {
+        tl.x = std::min(tl.x, corners[i].x);
+        tl.y = std::min(tl.y, corners[i].y);
+        br.x = std::max(br.x, corners[i].x + sizes[i].width);
+        br.y = std::max(br.y, corners[i].y + sizes[i].height);
+    }
+    return Rect(tl, br);
+}
+
+Rect ResultRoi(const vector<Point>& corners, const vector<UMat>& images)
+{
+    vector<Size> sizes(images.size());
+    for (size_t i = 0; i < images.size(); ++i)
+        sizes[i] = images[i].size();
+    return ResultRoi(corners, sizes);
+}
+
+
+/**
+ * @brief 为输入的二值掩模创建一个过渡区域
+ * @param src   输入二值化掩模, 要么0, 要么255
+ * @param dst   输出掩模, 边缘区域从0到255过渡
+ * @param b1    缩小方向的过渡区域像素大小
+ * @param b2    扩大方向的过渡区域像素大小
+ */
+void SmoothMaskWeightEdge(const Mat& src, Mat& dst, int b1, int b2)
+{
+#define ENABLE_DEBUG_SMOOTH_MASK 0
+
+    assert(src.type() == CV_8UC1);
+
+    if (b1 < 2 && b2 < 2) {
+        dst = src.clone();
+        return;
+    }
+
+    Mat noWeightMask, weightArea, weightAreaValue, weightDistance;
+    if (b1 >= 2 && b2 < 2) {  // 缩小
+        const Mat kernel1 = getStructuringElement(MORPH_ELLIPSE, Size(2 * b1 + 1, 2 * b1 + 1));
+        erode(src, noWeightMask, kernel1);  // 先腐蚀得到不要过渡的区域
+        weightArea = src - noWeightMask;    // 得到需要过渡的区域
+        distanceTransform(src, weightDistance, DIST_C, 3);
+        weightDistance.convertTo(weightDistance, CV_8UC1);  //! NOTE 32FC1 to 8UC1, 注意不能乘255
+        bitwise_and(weightDistance, weightArea, weightAreaValue);  // 得到过渡区域的权重
+        normalize(weightAreaValue, weightAreaValue, 0, 255, NORM_MINMAX);  // 归一化
+        add(noWeightMask, weightAreaValue, dst);  // 不过渡区域(保留权值为1) + 过渡权区域 = 目标掩模
+    } else if (b1 < 2 && b2 >= 2) {  // 扩大
+        const Mat kernel2 = getStructuringElement(MORPH_RECT, Size(2 * b2 + 1, 2 * b2 + 1));
+        dilate(src, noWeightMask, kernel2);
+        weightArea = noWeightMask - src;
+        distanceTransform(noWeightMask, weightDistance, DIST_C, 3);
+        weightDistance.convertTo(weightDistance, CV_8UC1);
+        bitwise_and(weightDistance, weightArea, weightAreaValue);
+        normalize(weightAreaValue, weightAreaValue, 0, 255, NORM_MINMAX);
+        add(src, weightAreaValue, dst);
+    } else {
+        assert(b1 >= 2 && b2 >= 2);
+
+        const Mat kernel1 = getStructuringElement(MORPH_ELLIPSE, Size(2 * b1 + 1, 2 * b1 + 1));
+        const Mat kernel2 = getStructuringElement(MORPH_RECT, Size(2 * b2 + 1, 2 * b2 + 1));
+
+        Mat tmp1, tmp2;
+        erode(src, tmp1, kernel1);
+        dilate(src, tmp2, kernel2);
+        weightArea = tmp2 - tmp1;
+
+#if DEBUG && ENABLE_DEBUG_SMOOTH_MASK
+        imshow("weightArea", weightArea);
+#endif
+        distanceTransform(tmp2, weightDistance, DIST_C, 3);
+        weightDistance.convertTo(weightDistance, CV_8UC1);
+        bitwise_and(weightDistance, weightArea, weightAreaValue);
+        normalize(weightAreaValue, weightAreaValue, 0, 255, NORM_MINMAX);
+
+#if DEBUG && ENABLE_DEBUG_SMOOTH_MASK
+        imshow("weightAreaValue", weightAreaValue);
+        waitKey(0);
+#endif
+        add(tmp1, weightAreaValue, dst);
+    }
+}
+
+
+/**
+ * get a gray scale value from reference image (bi-linear interpolated)
+ * @param [in] img the input image
+ * @param [in] x the position of x in the image
+ * @param [in] y the position of y in the image
+ * @return a float data for grayscale value in (x,y)
+ */
+float GetPixelValue(const Mat& img, float x, float y)
+{
+    uchar* data = &img.data[int(y) * img.step + int(x)];
+    float xx = x - floor(x);
+    float yy = y - floor(y);
+    return float((1 - xx) * (1 - yy) * data[0] + xx * (1 - yy) * data[1] +
+                 (1 - xx) * yy * data[img.step] + xx * yy * data[img.step + 1]);
+}
+
+
+//导向滤波器
+Mat GuidedFilter(const Mat& src, int radius, double eps)
+{
+    Mat srcMat, guidedMat, dstImage;
+    vector<Mat> vInputs, vResults;
+
+    if (src.channels() == 3) {
+        split(src, vInputs);
+        vResults.resize(3);
+        for (int i = 0; i < 3; ++i)
+            vResults[i] = GuidedFilter(vInputs[i], radius, eps);
+        merge(vResults, dstImage);
+        return dstImage;
+    }
+
+    //------------【0】转换源图像信息，将输入扩展为64位浮点型，以便以后做乘法------------
+    src.convertTo(srcMat, CV_64FC1);
+    src.convertTo(guidedMat, CV_64FC1, 1. / 255.);
+    //--------------【1】各种均值计算----------------------------------
+    Mat mean_p, mean_I, mean_Ip, mean_II;
+    boxFilter(srcMat, mean_p, CV_64FC1, Size(radius, radius));  //生成待滤波图像均值mean_p
+    boxFilter(guidedMat, mean_I, CV_64FC1, Size(radius, radius));  //生成引导图像均值mean_I
+    boxFilter(srcMat.mul(guidedMat), mean_Ip, CV_64FC1, Size(radius, radius));  //生成互相关均值mean_Ip
+    boxFilter(guidedMat.mul(guidedMat), mean_II, CV_64FC1, Size(radius, radius));  //生成引导图像自相关均值mean_II
+    //--------------【2】计算相关系数，计算Ip的协方差cov和I的方差var------------------
+    Mat cov_Ip = mean_Ip - mean_I.mul(mean_p);
+    Mat var_I = mean_II - mean_I.mul(mean_I);
+    //---------------【3】计算参数系数a、b-------------------
+    Mat a = cov_Ip / (var_I + eps);
+    Mat b = mean_p - a.mul(mean_I);
+    //--------------【4】计算系数a、b的均值-----------------
+    Mat mean_a, mean_b;
+    boxFilter(a, mean_a, CV_64FC1, Size(radius, radius));
+    boxFilter(b, mean_b, CV_64FC1, Size(radius, radius));
+    //---------------【5】生成输出矩阵------------------
+    dstImage = mean_a.mul(srcMat) + mean_b;
+    dstImage.convertTo(dstImage, CV_8UC1);
+
+    return dstImage;
+}
+
+
+/**
+ * @brief 应用边缘滤波
+ * @param img   输入输出图像, 单通道
+ * @param x     边缘点横坐标
+ * @param y     边缘点纵坐标
+ * @param dir   边缘点梯度方向, (0, 4]分别表示: - | \ /
+ * @param size  滤波核的尺寸大小3/5
+ */
+void ApplyEdgeFilter(Mat& src, int x, int y, int dir, int size = 3)
+{
+    assert(src.type() == CV_8UC1);
+    assert(dir > 0 && dir < 5);
+    assert(size == 3 || size == 5);
+
+    static vector<Mat> vKernels;
+    if (vKernels.empty()) {
+        vKernels.resize(4);
+        if (size == 3) {
+            vKernels[0] = (Mat_<float>(3, 3) << 3, 0, 3, 10, 0, 10, 3, 0, 3);
+            vKernels[2] = (Mat_<float>(3, 3) << 10, 3, 0, 3, 0, 3, 0, 3, 10);
+            vKernels[3] = (Mat_<float>(3, 3) << 0, 3, 10, 3, 0, 3, 10, 3, 0);
+        } else {
+            vKernels[0] = (Mat_<float>(5, 5) << 1, 2, 0, 2, 1, 3, 5, 0, 5, 3, 7, 15, 0, 15, 7, 3, 5,
+                           0, 5, 3, 1, 2, 0, 2, 1);
+            vKernels[2] = (Mat_<float>(5, 5) << 7, 3, 2, 1, 0, 3, 15, 5, 0, 1, 2, 5, 0, 5, 2, 1, 0,
+                           5, 15, 3, 0, 1, 2, 3, 7);
+            vKernels[3] = (Mat_<float>(5, 5) << 0, 1, 2, 3, 7, 1, 0, 5, 15, 3, 2, 5, 0, 5, 2, 3, 15,
+                           5, 0, 1, 7, 3, 2, 1, 0);
+        }
+        vKernels[0] = vKernels[0] / sum(vKernels[0]);
+        vKernels[1] = vKernels[0].t();
+        vKernels[2] = vKernels[2] / sum(vKernels[2]);
+        vKernels[3] = vKernels[3] / sum(vKernels[3]);
+    }
+
+    const Mat& kernel = vKernels[dir - 1];
+    Mat neighbor;
+    if (size == 3) {
+        if (x - 1 < 0 || y - 1 < 0 || x + 1 >= src.cols || y + 1 >= src.rows) {
+            WARNING("Pixel (" << x << ", " << y << ") on the border, skip it in the Edge Filter.");
+            return;
+        }
+        neighbor = src.rowRange(y - 1, y + 2).colRange(x - 1, x + 2);
+    } else {
+        if (x - 2 < 0 || y - 2 < 0 || x + 2 >= src.cols || y + 2 >= src.rows) {
+            WARNING("Pixel (" << x << ", " << y << ") on the border, skip it in the Edge Filter.");
+            return;
+        }
+        neighbor = src.rowRange(y - 2, y + 3).colRange(x - 2, x + 3);
+    }
+
+    Mat result;
+    multiply(neighbor, kernel, result, 1, CV_32FC1);
+    src.at<uchar>(y, x) = static_cast<uchar>(sum(result)[0]);
+}
+
+void ApplyEdgeFilter(const Mat& src, const Mat& gradient, const Mat& dirLabel, Mat& dst, int size = 3)
+{
+    assert(src.type() == CV_8UC1);
+    assert(dirLabel.type() == CV_8UC1);
+    assert(src.size() == gradient.size());
+    assert(src.size() == dirLabel.size());
+    assert(gradient.channels() == 1);
+
+    static vector<Mat> vKernels;
+    if (vKernels.empty()) {
+        vKernels.resize(5);
+        if (size == 3) {
+            vKernels[0] = (Mat_<float>(3, 3) << 3, 0, 3, 10, 0, 10, 3, 0, 3);
+            vKernels[2] = (Mat_<float>(3, 3) << 10, 3, 0, 3, 0, 3, 0, 3, 10);
+            vKernels[3] = (Mat_<float>(3, 3) << 0, 3, 10, 3, 0, 3, 10, 3, 0);
+            vKernels[4] = Mat::ones(3, 3, CV_32FC1);
+        } else {
+            vKernels[0] = (Mat_<float>(5, 5) << 1, 2, 0, 2, 1, 3, 5, 0, 5, 3, 7, 15, 0, 15, 7, 3, 5,
+                           0, 5, 3, 1, 2, 0, 2, 1);
+            vKernels[2] = (Mat_<float>(5, 5) << 7, 3, 2, 1, 0, 3, 15, 5, 0, 1, 2, 5, 0, 5, 2, 1, 0,
+                           5, 15, 3, 0, 1, 2, 3, 7);
+            vKernels[3] = (Mat_<float>(5, 5) << 0, 1, 2, 3, 7, 1, 0, 5, 15, 3, 2, 5, 0, 5, 2, 3, 15,
+                           5, 0, 1, 7, 3, 2, 1, 0);
+            vKernels[4] = Mat::ones(5, 5, CV_32FC1);
+        }
+        vKernels[0] = vKernels[0] / sum(vKernels[0]);
+        vKernels[1] = vKernels[0].t();
+        vKernels[2] = vKernels[2] / sum(vKernels[2]);
+        vKernels[3] = vKernels[3] / sum(vKernels[3]);
+        vKernels[4] = vKernels[4] / sum(vKernels[4]);
+    }
+
+    Mat grad;
+    gradient.convertTo(grad, CV_32FC1);
+    normalize(grad, grad, 0.f, 1.f, NORM_MINMAX);
+
+    dst = src.clone();
+    for (int y = 1; y < src.rows - 1; ++y) {
+        const float* grad_row = grad.ptr<float>(y);
+        const uchar* label_row = dirLabel.ptr<uchar>(y);
+        uchar* dst_row = dst.ptr<uchar>(y);
+
+        for (int x = 1; x < src.cols - 1; ++x) {
+            if (label_row[x] > 0 /* && grad_row[x] > 0.01*/) {
+                const Mat& kernel = vKernels[label_row[x] - 1];
+                Mat neighbor, result;
+                if (size == 3) {
+                    if (x - 1 < 0 || y - 1 < 0 || x + 1 >= src.cols || y + 1 >= src.rows) {
+                        WARNING("Pixel (" << x << ", " << y << ") on the border, skip it in the Edge Filter.");
+                        continue;
+                    }
+                    neighbor = src.rowRange(y - 1, y + 2).colRange(x - 1, x + 2);
+                } else {
+                    if (x - 2 < 0 || y - 2 < 0 || x + 2 >= src.cols || y + 2 >= src.rows) {
+                        WARNING("Pixel (" << x << ", " << y << ") on the border, skip it in the Edge Filter.");
+                        continue;
+                    }
+                    neighbor = src.rowRange(y - 2, y + 3).colRange(x - 2, x + 3);
+                }
+                multiply(neighbor, kernel, result, 1, CV_32FC1);
+                dst_row[x] = static_cast<uchar>(sum(result)[0]);
+            }
+        }
+    }
+}
+
+void ApplyEdgeFilterDown(const Mat& src, const Mat& gradient, const Mat& dirLabel, Mat& dst, double scale)
+{
+    assert(src.type() == CV_8UC1);
+    assert(dirLabel.type() == CV_8UC1);
+    assert(src.size() == gradient.size());
+    //    assert(src.size() == dirLabel.size() * scale);
+    assert(gradient.channels() == 1);
+
+    static vector<Mat> vKernels;
+    if (vKernels.empty()) {
+        vKernels.resize(5);
+        vKernels[0] = (Mat_<float>(3, 3) << 3, 0, 3, 10, 0, 10, 3, 0, 3);
+        vKernels[0] = vKernels[0] / sum(vKernels[0]);
+        vKernels[1] = vKernels[0].t();
+        vKernels[2] = (Mat_<float>(3, 3) << 10, 3, 0, 3, 0, 3, 0, 3, 10);
+        vKernels[2] = vKernels[2] / sum(vKernels[2]);
+        vKernels[3] = (Mat_<float>(3, 3) << 0, 3, 10, 3, 0, 3, 10, 3, 0);
+        vKernels[3] = vKernels[3] / sum(vKernels[3]);
+        vKernels[4] = (Mat_<float>(3, 3) << 1, 1, 1, 1, 1, 1, 1, 1, 1);
+        vKernels[4] = vKernels[4] / sum(vKernels[4]);
+    }
+
+    Mat grad;
+    gradient.convertTo(grad, CV_32FC1);
+    normalize(grad, grad, 0.f, 1.f, NORM_MINMAX);
+
+    dst = src.clone();
+    for (int y = 1; y < src.rows - 1; ++y) {
+        const int y_scaled = y * scale;
+        const uchar* label_row = dirLabel.ptr<uchar>(y_scaled);
+        uchar* dst_row = dst.ptr<uchar>(y);
+
+        for (int x = 1; x < src.cols - 1; ++x) {
+            const int x_scaled = x * scale;
+            if (label_row[x_scaled] > 0) {
+                const Mat& kernel = vKernels[label_row[x_scaled] - 1];
+                const Mat& neighbor = src.rowRange(y - 1, y + 2).colRange(x - 1, x + 2);
+                Mat result;
+                multiply(neighbor, kernel, result, 1, CV_32FC1);
+                dst_row[x] = static_cast<uchar>(sum(result)[0]);
+            }
+        }
+    }
+    imwrite("/home/vance/output/ms/最小值滤波前.png", dst);
+
+    // 再做个最小值/均值滤波
+    //    Mat gap;
+    //    threshold(gradient, gap, 150, 255, THRESH_OTSU);
+    for (int y = 1; y < dst.rows - 1; ++y) {
+        const int y_scaled = y * scale;
+        //        const float* grad_row = grad.ptr<float>(y);
+        const uchar* label_row = dirLabel.ptr<uchar>(y_scaled);
+        //        const uchar* gap_row = gap.ptr<uchar>(y);
+        uchar* dst_row = dst.ptr<uchar>(y);
+
+        for (int x = 1; x < dst.cols - 1; ++x) {
+            const int x_scaled = x * scale;
+            if (label_row[x_scaled] > 0) {
+                //                const Mat& kernel = vKernels[4];
+                const Mat& neighbor = dst.rowRange(y - 1, y + 2).colRange(x - 1, x + 2);
+                //                Mat result;
+                //                multiply(neighbor, kernel, result, 1, CV_32FC1);
+                //                dst_row[x] = static_cast<uchar>(sum(result)[0]);
+                double minVal;
+                minMaxIdx(neighbor, &minVal);
+                dst_row[x] = static_cast<uchar>(minVal);
+            }
+        }
+    }
+    imwrite("/home/vance/output/ms/最小值滤波后.png", dst);
+}
+
+/**
+ * @brief overlappedEdgesSmoothing  重叠区域的边缘平滑, 主要是为了消除前景重叠区域边缘处的锯齿
+ * @param src   拼接后的前景图
+ * @param mask  前景图中重叠区域的边缘掩模(降低计算量, 限制处理范围)
+ * @param dst   结果图
+ */
+void OverlappedEdgesSmoothing(const Mat& src, const Mat& mask, Mat& dst, double scale)
+{
+#define ENABLE_DEBUG_EDGE_FILTER 1
+#define SMOOTH_UPLOARD 0  // 梯度上采样后计算(反之下采样)
+
+    assert(scale > 0 && scale <= 1.);
+    const double invScale = 1. / scale;
+
+    static vector<Mat> vKernels;
+    if (vKernels.empty()) {
+        vKernels.resize(4);
+        vKernels[0] = (Mat_<char>(3, 3) << -3, 0, 3, -10, 0, 10, -3, 0, 3);
+        vKernels[1] = vKernels[0].t();
+        vKernels[2] = (Mat_<char>(3, 3) << -10, -3, 0, -3, 0, 3, 0, 3, 10);
+        vKernels[3] = (Mat_<char>(3, 3) << 0, 3, 10, -3, 0, 3, -10, -3, 0);
+    }
+
+    static vector<Point3_<uchar>> vDirLableColor;
+    if (vDirLableColor.empty()) {
+        vDirLableColor.resize(5);
+        vDirLableColor[0] = Point3_<uchar>(0, 0, 0);
+        vDirLableColor[1] = Point3_<uchar>(0, 0, 255);
+        vDirLableColor[2] = Point3_<uchar>(0, 255, 0);
+        vDirLableColor[3] = Point3_<uchar>(255, 0, 0);
+        vDirLableColor[4] = Point3_<uchar>(255, 255, 255);
+    }
+
+    // 1.下采样并在Y域上求解4个方向的梯度
+    Mat srcGray, src_L1, srcGray_L1, mask_L1;
+    //    Mat src_yuv, src_luma, src_chroma;
+    //    vector<Mat> srcChannels_yuv(3);
+    //    cvtColor(src, src_yuv, COLOR_BGR2YCrCb);
+    //    split(src_yuv, srcChannels_yuv);
+
+    cvtColor(src, srcGray, COLOR_BGR2GRAY);
+    resize(src, src_L1, Size(), scale, scale);
+    resize(mask, mask_L1, Size(), scale, scale);
+    resize(srcGray, srcGray_L1, Size(), scale, scale);
+    vector<Mat> vGradient_L1(4);  // CV_32FC1
+    for (int i = 0; i < 4; ++i) {
+        filter2D(srcGray_L1, vGradient_L1[i], CV_32FC1, vKernels[i], Point(-1, -1), 0, BORDER_REPLICATE);
+    }
+#if DEBUG && ENABLE_DEBUG_EDGE_FILTER
+    Mat g12 = (cv::abs(vGradient_L1[0]) + cv::abs(vGradient_L1[1])) * 0.5;
+    Mat g34 = (cv::abs(vGradient_L1[2]) + cv::abs(vGradient_L1[3])) * 0.5;
+    normalize(g12, g12, 0.f, 1.f, NORM_MINMAX);
+    g12.convertTo(g12, CV_8UC1, 255);
+    normalize(g34, g34, 0.f, 1.f, NORM_MINMAX);
+    g34.convertTo(g34, CV_8UC1, 255);
+    bitwise_or(0, g12, g12, mask_L1);
+    bitwise_or(0, g34, g34, mask_L1);
+    imwrite("/home/vance/output/ms/L1-初始梯度方向1+2.png", g12);
+    imwrite("/home/vance/output/ms/L1-初始梯度方向3+4.png", g34);
+#endif
+
+    // 2.对掩模对应的区域的梯度, 选出4个方向中的最大者并标记最大梯度方向
+    Mat maxGradientFull_L1 = Mat::zeros(srcGray_L1.size(), CV_32FC1);
+    Mat maxGradientEdge_L1 = Mat::zeros(srcGray_L1.size(), CV_32FC1);
+    Mat dirLabel_L1 = Mat::zeros(srcGray_L1.size(), CV_8UC1);  // 掩模区内边缘的方向
+    Mat dirLabelColor_L1 = Mat::zeros(srcGray_L1.size(), CV_8UC3);
+    for (int y = 0; y < srcGray_L1.rows; ++y) {
+        const char* mask_row = mask_L1.ptr<char>(y);
+        float* grad_row = maxGradientEdge_L1.ptr<float>(y);
+        char* label_row = dirLabel_L1.ptr<char>(y);
+        Point3_<uchar>* color_row = dirLabelColor_L1.ptr<Point3_<uchar>>(y);
+
+        float* tmp_row = maxGradientFull_L1.ptr<float>(y);
+
+        for (int x = 0; x < srcGray_L1.cols; ++x) {
+            //            if (mask_row[x] != 0) {
+            int label = 0;  // 默认无梯度则黑色
+            float maxGradient = 0.f;
+            for (int i = 0; i < 4; ++i) {
+                const float g = abs(vGradient_L1[i].at<float>(y, x));  // 绝对值符号使正负方向为同一方向
+                if (g > maxGradient) {
+                    maxGradient = g;
+                    label = i + 1;
+                }
+            }
+            tmp_row[x] = maxGradient;
+
+            if (mask_row[x] != 0) {
+                grad_row[x] = maxGradient;
+                label_row[x] = label;
+                color_row[x] = vDirLableColor[label];
+            }
+        }
+    }
+    normalize(maxGradientEdge_L1, maxGradientEdge_L1, 0.f, 1.f, NORM_MINMAX);  // 归一化
+    Mat maxGradient_L1;
+    maxGradientEdge_L1.convertTo(maxGradient_L1, CV_8UC1, 255);
+    threshold(maxGradient_L1, maxGradient_L1, 10, 0, THRESH_TOZERO);  // 太小的梯度归0
+
+    // 大梯度的白边区域
+    Mat largeGradienMask_L1;
+    threshold(maxGradient_L1, largeGradienMask_L1, 150, 255, THRESH_OTSU);
+
+#if DEBUG && ENABLE_DEBUG_EDGE_FILTER
+    imwrite("/home/vance/output/ms/L1-重叠区域最大梯度强度.png", maxGradient_L1);
+    imwrite("/home/vance/output/ms/L1-重叠区域最大梯度方向.png", dirLabelColor_L1);
+    imwrite("/home/vance/output/ms/L1-重叠区域最大梯度otsu.png", largeGradienMask_L1);
+
+    normalize(maxGradientFull_L1, maxGradientFull_L1, 0.f, 1.f, NORM_MINMAX);
+    maxGradientFull_L1.convertTo(maxGradientFull_L1, CV_8UC1, 255);
+    imwrite("/home/vance/output/ms/L1-初始梯度方向最大.png", maxGradientFull_L1);
+    Mat toShow = src.clone();
+#endif
+
+
+    ////////////////////////////////////////////////////
+    //    // 先在小尺度上对大梯度区域做金字塔融合滤波.
+    //    Mat src_L2, mask_L2, srcGray_L2, largeGradienMask_L2;
+    //    resize(src_L1, src_L2, Size(), scale, scale);
+    //    resize(mask_L1, mask_L2, Size(), scale, scale);
+    //    resize(largeGradienMask_L1, largeGradienMask_L2, Size(), scale, scale);
+    //    resize(srcGray_L1, srcGray_L2, Size(), scale, scale);
+
+    ////    vector<Mat> vGradient_L2(4);
+    ////    for (int i = 0; i < 4; ++i)
+    ////        filter2D(srcGray_L2, vGradient_L2[i], CV_32FC1, vKernels[i], Point(-1, -1), 0, BORDER_REPLICATE);
+
+    ////    Mat maxGradient_L2 = Mat::zeros(srcGray_L2.size(), CV_32FC1);
+    ////    Mat dirLabel_L2 = Mat::zeros(srcGray_L2.size(), CV_8UC1);   // 掩模区内边缘的方向
+    ////    Mat dirLabelColor_L2 = Mat::zeros(srcGray_L2.size(), CV_8UC3);
+    ////    for (int y = 0; y < srcGray_L2.rows; ++y) {
+    ////        const char* mask_row = /*mask_L2*/largeGradienMask_L2.ptr<char>(y);
+    ////        float* grad_row = maxGradient_L2.ptr<float>(y);
+    ////        char* label_row = dirLabel_L2.ptr<char>(y);
+    ////        Point3_<uchar>* color_row = dirLabelColor_L2.ptr<Point3_<uchar>>(y);
+
+    ////        for (int x = 0; x < srcGray_L2.cols; ++x) {
+    ////            if (mask_row[x] != 0) {
+    ////                int label = 0;  // 默认无梯度则黑色
+    ////                float maxGradient = 0.f;
+    ////                for (int i = 0; i < 4; ++i) {
+    ////                    const float g = abs(vGradient_L2[i].at<float>(y, x)); //
+    ///绝对值符号使正负方向为同一方向 /                    if (g > maxGradient) { / maxGradient = g;
+    ////                        label = i + 1;
+    ////                    }
+    ////                }
+    ////                grad_row[x] = maxGradient;
+    ////                label_row[x] = label;
+    ////                color_row[x] = vDirLableColor[label];
+    ////            }
+    ////        }
+    ////    }
+    ////    normalize(maxGradient_L2, maxGradient_L2, 0.f, 1.f, NORM_MINMAX);  // 归一化
+    ////    maxGradient_L2.convertTo(maxGradient_L2, CV_8UC1, 255);
+    ////    imwrite("/home/vance/output/ms/L2-重叠区域最大梯度强度.png", maxGradient_L2);
+    ////    imwrite("/home/vance/output/ms/L2-重叠区域最大梯度方向.png", dirLabelColor_L2);
+    ////    exit(0);
+
+    //    vector<Mat> srcLapPyr(3), dstLapPyr(3);
+    //    Mat tmp;
+    //    resize(src_L1, tmp, src.size());
+    //    dstLapPyr[0] = src - tmp;
+    //    resize(src_L2, tmp, src_L1.size());
+    //    dstLapPyr[1] = src_L1 - tmp;
+    //    dstLapPyr[2] = src_L2;
+
+    //    vector<Mat> srcChannels_L2(3), dstChanels_L2(3), dstChanels_L1(3);
+    //    split(src_L2, srcChannels_L2);
+    //    dstChanels_L2 = srcChannels_L2;
+
+    //    vector<Mat> vDstScaledFilterd(3), vDst_L1(3);
+    //    for (int i = 0; i < 3; ++i)
+    //        applyEdgeFilterDown(srcChannels_L2[i], largeGradienMask_L2, dirLabel_L1, dstChanels_L2[i], 0.5);
+    //    Mat dst_L1, dst_L2;
+    //    merge(dstChanels_L2, dst_L2);
+    //    resize(dst_L2, dst_L1, src_L1.size());
+    //    imwrite("/home/vance/output/ms/L2-EF+最小值滤波前.png", src_L2);
+    //    imwrite("/home/vance/output/ms/L2-EF+最小值滤波后.png", dst_L2);
+
+    //    imwrite("/home/vance/output/ms/L1-从L2上采样结果.png", dst_L1);
+    ////    dst_L1 += dstLapPyr[1];
+    ////    imwrite("/home/vance/output/ms/L1-从L2上采样+Lap结果.png", dst_L1);
+
+    //    split(dst_L1, dstChanels_L1);
+    //    for (int i = 0; i < 3; ++i)
+    //        applyEdgeFilter(dstChanels_L1[i], maxGradientEdge_L1, dirLabel_L1, dstChanels_L1[i]);
+
+    //    Mat dstFilter_L1, dst_L0;
+    //    merge(dstChanels_L1, dstFilter_L1);
+    //    imwrite("/home/vance/output/ms/L1-从L2上采样+EF结果.png", dstFilter_L1);
+    //    resize(dstFilter_L1, dst_L0, src.size());
+    //    imwrite("/home/vance/output/ms/L0-从L1上采样结果.png", dst_L0);
+    ////    dst_L0 += dstLapPyr[0];
+    ////    imwrite("/home/vance/output/ms/L0-从L1上采样+Lap结果.png", dst_L0);
+
+    //    Mat toAdd;
+    //    dst = src.clone();
+    //    bitwise_and(dst_L0, 255, toAdd, mask);
+    //    bitwise_and(dst, 0, dst, mask);
+    //    dst += toAdd;
+    ////////////////////////////////////////////////////
+
+    vector<Point> vPointsToSmooth;
+    vector<int> vDirsToSmooth;
+    vPointsToSmooth.reserve(10000);
+    vDirsToSmooth.reserve(10000);
+
+    // 在低尺度上滤波一次, 然后上采样回原尺度加权融合
+    //    vector<Mat> vDstScaledFilterd(3), vDst_L1(3);
+    //    resize(dstChanels[0], vDst_L1[0], Size(), scale, scale);
+    //    resize(dstChanels[1], vDst_L1[1], Size(), scale, scale);
+    //    resize(dstChanels[2], vDst_L1[2], Size(), scale, scale);
+    //    for (int i = 0; i < 3; ++i)
+    //        applyEdgeFilter(vDst_L1[i], maxGradient_L1, dirLabel_L1, vDstScaledFilterd[i]);
+
+    //    Mat dstScaledFilterd, dstFilterdOnce;
+    //    merge(vDstScaledFilterd, dstScaledFilterd);
+    //    resize(dstScaledFilterd, dstFilterdOnce, src.size());
+
+    //    imwrite("/home/vance/output/ms/前景(L1)低尺度滤波前.png", src_L1);
+    //    imwrite("/home/vance/output/ms/前景(L1)低尺度滤波后.png", dstScaledFilterd);
+    //    imwrite("/home/vance/output/ms/前景低尺度滤波.png", dstFilterdOnce);
+
+    vector<Mat> dstChanels;
+    dst = src.clone();
+    //    dst.setTo(0, mask);
+
+    //    bitwise_or(dst, dstFilterdOnce, dst, mask);
+    //    imwrite("/home/vance/output/ms/前景低尺度滤波应用到原尺度.png", dst);
+    split(dst, dstChanels);
+
+    // 再到原尺度上滤波
+    for (int y = 0; y < src.rows; ++y) {
+        const int y_scaled = cvRound(y * scale);
+        if (y_scaled >= dirLabel_L1.rows)
+            continue;
+
+        const uchar* edge_row = maxGradient_L1.ptr<uchar>(y_scaled);
+        const uchar* label_row = dirLabel_L1.ptr<uchar>(y_scaled);
+        for (int x = 0; x < src.cols; ++x) {
+            const int x_scaled = cvRound(x * scale);
+            if (x_scaled >= dirLabel_L1.cols)
+                continue;
+
+            if (label_row[x_scaled] > 0 /*&& edge_row[x_scaled] > 10*/) {
+                ApplyEdgeFilter(dstChanels[0], x, y, label_row[x_scaled], 5);
+                ApplyEdgeFilter(dstChanels[1], x, y, label_row[x_scaled], 5);
+                ApplyEdgeFilter(dstChanels[2], x, y, label_row[x_scaled], 5);
+                //                vPointsToSmooth.push_back(Point(x, y));
+                //                vDirsToSmooth.push_back(label_row[x_scaled]);
+                //                toShow.at<Vec3b>(y, x) = Vec3b(0,255,0);
+            }
+        }
+    }
+
+    ////    applyEdgeFilter(srcChannels[0], dstChanels[0], vPointsToSmooth, vDirsToSmooth);
+    ////    applyEdgeFilter(srcChannels[1], dstChanels[1], vPointsToSmooth, vDirsToSmooth);
+    ////    applyEdgeFilter(srcChannels[2], dstChanels[2], vPointsToSmooth, vDirsToSmooth);
+    merge(dstChanels, dst);
+
+#if DEBUG && ENABLE_DEBUG_EDGE_FILTER
+    Mat input = src.clone(), output = dst.clone();
+    vector<vector<Point>> contours;
+    findContours(mask, contours, RETR_LIST, CHAIN_APPROX_SIMPLE);
+    drawContours(input, contours, -1, Scalar(0, 255, 0), 1);
+    drawContours(output, contours, -1, Scalar(0, 255, 0), 1);
+    //    namedLargeWindow("points to smooth", 1);
+    NamedLargeWindow("src", 1);
+    NamedLargeWindow("dst", 1);
+    //    imshow("src", input);
+    //    imshow("dst", dst);
+    imwrite("/home/vance/output/ms/输入前景和边缘掩模.png", input);
+    imwrite("/home/vance/output/ms/输出图像和边缘掩模.png", output);
+    //    imwrite("/home/vance/output/ms/被处理的区域.png", toShow);
+    //    imshow("points to smooth", toShow);
+    waitKey(10);
+    destroyAllWindows();
+#endif
+}
+
+#if DEBUG
+void NamedLargeWindow(const string& title, bool flag)
+{
+    if (flag) {
+        namedWindow(title, WINDOW_KEEPRATIO | WINDOW_NORMAL);
+        resizeWindow(title, Size(1440, 1080));
+    } else {
+        namedWindow(title, WINDOW_AUTOSIZE);
+    }
+}
+
+void MakeColorWheel(vector<Scalar>& colorwheel)
 {
     int RY = 15;
     int YG = 6;
@@ -461,15 +1085,14 @@ void makeColorWheel(vector<Scalar>& colorwheel)
     for (int i = 0; i < MR; i++)
         colorwheel.push_back(Scalar(255, 0, 255 - 255 * i / MR));
 }
-
-void flowToColor(const Mat& flow, Mat& color)
+void FlowToColor(const Mat& flow, Mat& color)
 {
     if (color.empty())
         color.create(flow.rows, flow.cols, CV_8UC3);
 
     static vector<Scalar> colorwheel;  // Scalar r,g,b
     if (colorwheel.empty())
-        makeColorWheel(colorwheel);
+        MakeColorWheel(colorwheel);
 
     // determine motion range:
     float maxrad = -1;
@@ -521,7 +1144,7 @@ void flowToColor(const Mat& flow, Mat& color)
     }
 }
 
-void showFlow(const Mat& flow, Mat& color)
+void ShowFlow(const Mat& flow, Mat& color)
 {
     Mat flow_uv[2], mag, ang, hsv, hsv_split[3], bgr;
     split(flow, flow_uv);
@@ -536,8 +1159,7 @@ void showFlow(const Mat& flow, Mat& color)
     bgr.convertTo(color, CV_8UC3, 255, 0);
 }
 
-
-void drawhistogram(const Mat& src, Mat& histGray, const Mat& mask, int binSize)
+void Drawhistogram(const Mat& src, Mat& histGray, const Mat& mask, int binSize)
 {
     assert(src.channels() == 1);  // 8UC1
     assert(binSize < 128 && binSize >= 1);
@@ -589,7 +1211,7 @@ void drawhistogram(const Mat& src, Mat& histGray, const Mat& mask, int binSize)
     waitKey(0);
 }
 
-void drawFlowAndHist(const Mat& flow, Mat& flowGray, Mat& hist, Mat& histGraph, int chanel, int binSize)
+void DrawFlowAndHist(const Mat& flow, Mat& flowGray, Mat& hist, Mat& histGraph, int chanel, int binSize)
 {
     assert(flow.type() == CV_32FC2);  // CV_32FC2
     assert(binSize < 128 && binSize >= 1);
@@ -640,643 +1262,7 @@ void drawFlowAndHist(const Mat& flow, Mat& flowGray, Mat& hist, Mat& histGraph, 
     waitKey(30);
 }
 
-/**
- * @brief resultRoi 根据多个输入的图像/ROI区域, 生成一个覆盖了所有图像/ROI子区域的大区域
- * @param corners   多个图像/ROI区域的左上角坐标
- * @param images    多个图像对应的尺寸
- * @param sizes     多个ROI区域对应的尺寸
- * @return  返回覆盖了所有图像/ROI的大区域
- */
-Rect resultRoi(const std::vector<Point>& corners, const std::vector<Size>& sizes)
-{
-    CV_Assert(sizes.size() == corners.size());
-    Point tl(std::numeric_limits<int>::max(), std::numeric_limits<int>::max());
-    Point br(std::numeric_limits<int>::min(), std::numeric_limits<int>::min());
-    for (size_t i = 0; i < corners.size(); ++i) {
-        tl.x = std::min(tl.x, corners[i].x);
-        tl.y = std::min(tl.y, corners[i].y);
-        br.x = std::max(br.x, corners[i].x + sizes[i].width);
-        br.y = std::max(br.y, corners[i].y + sizes[i].height);
-    }
-    return Rect(tl, br);
-}
 
-Rect resultRoi(const std::vector<Point>& corners, const std::vector<UMat>& images)
-{
-    std::vector<Size> sizes(images.size());
-    for (size_t i = 0; i < images.size(); ++i)
-        sizes[i] = images[i].size();
-    return resultRoi(corners, sizes);
-}
-
-
-/**
- * @brief 为输入的二值掩模创建一个过渡区域
- * @param src   输入二值化掩模, 要么0, 要么255
- * @param dst   输出掩模, 边缘区域从0到255过渡
- * @param b1    缩小方向的过渡区域像素大小
- * @param b2    扩大方向的过渡区域像素大小
- */
-void smoothMaskWeightEdge(const cv::Mat& src, cv::Mat& dst, int b1, int b2)
-{
-#define ENABLE_DEBUG_SMOOTH_MASK 0
-
-    assert(src.type() == CV_8UC1);
-
-    if (b1 < 2 && b2 < 2) {
-        dst = src.clone();
-        return;
-    }
-
-    Mat noWeightMask, weightArea, weightAreaValue, weightDistance;
-    if (b1 >= 2 && b2 < 2) {  // 缩小
-        const Mat kernel1 = getStructuringElement(MORPH_ELLIPSE, Size(2 * b1 + 1, 2 * b1 + 1));
-        erode(src, noWeightMask, kernel1);  // 先腐蚀得到不要过渡的区域
-        weightArea = src - noWeightMask;    // 得到需要过渡的区域
-        distanceTransform(src, weightDistance, DIST_C, 3);
-        weightDistance.convertTo(weightDistance, CV_8UC1);  //! NOTE 32FC1 to 8UC1, 注意不能乘255
-        bitwise_and(weightDistance, weightArea, weightAreaValue);  // 得到过渡区域的权重
-        normalize(weightAreaValue, weightAreaValue, 0, 255, NORM_MINMAX);  // 归一化
-        add(noWeightMask, weightAreaValue, dst);  // 不过渡区域(保留权值为1) + 过渡权区域 = 目标掩模
-    } else if (b1 < 2 && b2 >= 2) {  // 扩大
-        const Mat kernel2 = getStructuringElement(MORPH_RECT, Size(2 * b2 + 1, 2 * b2 + 1));
-        dilate(src, noWeightMask, kernel2);
-        weightArea = noWeightMask - src;
-        distanceTransform(noWeightMask, weightDistance, DIST_C, 3);
-        weightDistance.convertTo(weightDistance, CV_8UC1);
-        bitwise_and(weightDistance, weightArea, weightAreaValue);
-        normalize(weightAreaValue, weightAreaValue, 0, 255, NORM_MINMAX);
-        add(src, weightAreaValue, dst);
-    } else {
-        assert(b1 >= 2 && b2 >= 2);
-
-        const Mat kernel1 = getStructuringElement(MORPH_ELLIPSE, Size(2 * b1 + 1, 2 * b1 + 1));
-        const Mat kernel2 = getStructuringElement(MORPH_RECT, Size(2 * b2 + 1, 2 * b2 + 1));
-
-        Mat tmp1, tmp2;
-        erode(src, tmp1, kernel1);
-        dilate(src, tmp2, kernel2);
-        weightArea = tmp2 - tmp1;
-
-#if ENABLE_DEBUG && ENABLE_DEBUG_SMOOTH_MASK
-        imshow("weightArea", weightArea);
 #endif
-        distanceTransform(tmp2, weightDistance, DIST_C, 3);
-        weightDistance.convertTo(weightDistance, CV_8UC1);
-        bitwise_and(weightDistance, weightArea, weightAreaValue);
-        normalize(weightAreaValue, weightAreaValue, 0, 255, NORM_MINMAX);
-
-#if ENABLE_DEBUG && ENABLE_DEBUG_SMOOTH_MASK
-        imshow("weightAreaValue", weightAreaValue);
-        waitKey(0);
-#endif
-        add(tmp1, weightAreaValue, dst);
-    }
-}
-
-
-/**
- * get a gray scale value from reference image (bi-linear interpolated)
- * @param [in] img the input image
- * @param [in] x the position of x in the image
- * @param [in] y the position of y in the image
- * @return a float data for grayscale value in (x,y)
- */
-float getPixelValue(const cv::Mat& img, float x, float y)
-{
-    uchar* data = &img.data[int(y) * img.step + int(x)];
-    float xx = x - floor(x);
-    float yy = y - floor(y);
-    return float((1 - xx) * (1 - yy) * data[0] + xx * (1 - yy) * data[1] +
-                 (1 - xx) * yy * data[img.step] + xx * yy * data[img.step + 1]);
-}
-
-
-//导向滤波器
-Mat guidedFilter(const Mat& src, int radius, double eps)
-{
-    Mat srcMat, guidedMat, dstImage;
-    vector<Mat> vInputs, vResults;
-
-    if (src.channels() == 3) {
-        split(src, vInputs);
-        vResults.resize(3);
-        for (int i = 0; i < 3; ++i)
-            vResults[i] = guidedFilter(vInputs[i], radius, eps);
-        merge(vResults, dstImage);
-        return dstImage;
-    }
-
-    //------------【0】转换源图像信息，将输入扩展为64位浮点型，以便以后做乘法------------
-    src.convertTo(srcMat, CV_64FC1);
-    src.convertTo(guidedMat, CV_64FC1, 1. / 255.);
-    //--------------【1】各种均值计算----------------------------------
-    Mat mean_p, mean_I, mean_Ip, mean_II;
-    boxFilter(srcMat, mean_p, CV_64FC1, Size(radius, radius));  //生成待滤波图像均值mean_p
-    boxFilter(guidedMat, mean_I, CV_64FC1, Size(radius, radius));  //生成引导图像均值mean_I
-    boxFilter(srcMat.mul(guidedMat), mean_Ip, CV_64FC1, Size(radius, radius));  //生成互相关均值mean_Ip
-    boxFilter(guidedMat.mul(guidedMat), mean_II, CV_64FC1, Size(radius, radius));  //生成引导图像自相关均值mean_II
-    //--------------【2】计算相关系数，计算Ip的协方差cov和I的方差var------------------
-    Mat cov_Ip = mean_Ip - mean_I.mul(mean_p);
-    Mat var_I = mean_II - mean_I.mul(mean_I);
-    //---------------【3】计算参数系数a、b-------------------
-    Mat a = cov_Ip / (var_I + eps);
-    Mat b = mean_p - a.mul(mean_I);
-    //--------------【4】计算系数a、b的均值-----------------
-    Mat mean_a, mean_b;
-    boxFilter(a, mean_a, CV_64FC1, Size(radius, radius));
-    boxFilter(b, mean_b, CV_64FC1, Size(radius, radius));
-    //---------------【5】生成输出矩阵------------------
-    dstImage = mean_a.mul(srcMat) + mean_b;
-    dstImage.convertTo(dstImage, CV_8UC1);
-
-    return dstImage;
-}
-
-void getArrowPoints(const Point& p, Point& s, Point& e, int dir)
-{
-    switch (dir) {
-        case 1:
-
-            break;
-        default:
-            break;
-    }
-}
-
-/**
- * @brief 应用边缘滤波
- * @param img   输入输出图像, 单通道
- * @param x     边缘点横坐标
- * @param y     边缘点纵坐标
- * @param dir   边缘点梯度方向, (0, 4]分别表示: - | \ /
- * @param size  滤波核的尺寸大小3/5
- */
-void applyEdgeFilter(Mat& src, int x, int y, int dir, int size = 3)
-{
-    assert(src.type() == CV_8UC1);
-    assert(dir > 0 && dir < 5);
-    assert(size == 3 || size == 5);
-
-    static vector<Mat> vKernels;
-    if (vKernels.empty()) {
-        vKernels.resize(4);
-        if (size == 3) {
-            vKernels[0] = (Mat_<float>(3, 3) << 3, 0, 3, 10, 0, 10, 3, 0, 3);
-            vKernels[2] = (Mat_<float>(3, 3) << 10, 3, 0, 3, 0, 3, 0, 3, 10);
-            vKernels[3] = (Mat_<float>(3, 3) << 0, 3, 10, 3, 0, 3, 10, 3, 0);
-        } else {
-            vKernels[0] = (Mat_<float>(5, 5) << 1, 2, 0, 2, 1,  3, 5, 0, 5, 3,  7, 15, 0, 15, 7,
-                                                3, 5, 0, 5, 3,  1, 2, 0, 2, 1);
-            vKernels[2] = (Mat_<float>(5, 5) << 7, 3, 2, 1, 0,  3, 15, 5, 0, 1,  2, 5, 0, 5, 2,
-                                                1, 0, 5, 15, 3,  0, 1, 2, 3, 7);
-            vKernels[3] = (Mat_<float>(5, 5) << 0, 1, 2, 3, 7,  1, 0, 5, 15, 3,  2, 5, 0, 5, 2,
-                                                3, 15, 5, 0, 1,  7, 3, 2, 1, 0);
-        }
-        vKernels[0] = vKernels[0] / sum(vKernels[0]);
-        vKernels[1] = vKernels[0].t();
-        vKernels[2] = vKernels[2] / sum(vKernels[2]);
-        vKernels[3] = vKernels[3] / sum(vKernels[3]);
-    }
-
-    const Mat& kernel = vKernels[dir - 1];
-    Mat neighbor;
-    if (size == 3) {
-        if (x - 1 < 0 || y - 1 < 0 || x + 1 >= src.cols || y + 1 >= src.rows) {
-            WARNING("Pixel (" << x << ", " << y << ") on the border, skip it in the Edge Filter.");
-            return;
-        }
-        neighbor = src.rowRange(y - 1, y + 2).colRange(x - 1, x + 2);
-    } else {
-        if (x - 2 < 0 || y - 2 < 0 || x + 2 >= src.cols || y + 2 >= src.rows) {
-            WARNING("Pixel (" << x << ", " << y << ") on the border, skip it in the Edge Filter.");
-            return;
-        }
-        neighbor = src.rowRange(y - 2, y + 3).colRange(x - 2, x + 3);
-    }
-
-    Mat result;
-    multiply(neighbor, kernel, result, 1, CV_32FC1);
-    src.at<uchar>(y, x) = static_cast<uchar>(sum(result)[0]);
-}
-
-void applyEdgeFilter(const Mat& src, const Mat& gradient, const Mat& dirLabel, Mat& dst, int size = 3)
-{
-    assert(src.type() == CV_8UC1);
-    assert(dirLabel.type() == CV_8UC1);
-    assert(src.size() == gradient.size());
-    assert(src.size() == dirLabel.size());
-    assert(gradient.channels() == 1);
-
-    static vector<Mat> vKernels;
-    if (vKernels.empty()) {
-        vKernels.resize(5);
-        if (size == 3) {
-            vKernels[0] = (Mat_<float>(3, 3) << 3, 0, 3, 10, 0, 10, 3, 0, 3);
-            vKernels[2] = (Mat_<float>(3, 3) << 10, 3, 0, 3, 0, 3, 0, 3, 10);
-            vKernels[3] = (Mat_<float>(3, 3) << 0, 3, 10, 3, 0, 3, 10, 3, 0);
-            vKernels[4] = Mat::ones(3, 3, CV_32FC1);
-        } else {
-            vKernels[0] = (Mat_<float>(5, 5) << 1, 2, 0, 2, 1,  3, 5, 0, 5, 3,  7, 15, 0, 15, 7,
-                                                3, 5, 0, 5, 3,  1, 2, 0, 2, 1);
-            vKernels[2] = (Mat_<float>(5, 5) << 7, 3, 2, 1, 0,  3, 15, 5, 0, 1,  2, 5, 0, 5, 2,
-                                                1, 0, 5, 15, 3,  0, 1, 2, 3, 7);
-            vKernels[3] = (Mat_<float>(5, 5) << 0, 1, 2, 3, 7,  1, 0, 5, 15, 3,  2, 5, 0, 5, 2,
-                                                3, 15, 5, 0, 1,  7, 3, 2, 1, 0);
-            vKernels[4] = Mat::ones(5, 5, CV_32FC1);
-        }
-        vKernels[0] = vKernels[0] / sum(vKernels[0]);
-        vKernels[1] = vKernels[0].t();
-        vKernels[2] = vKernels[2] / sum(vKernels[2]);
-        vKernels[3] = vKernels[3] / sum(vKernels[3]);
-        vKernels[4] = vKernels[4] / sum(vKernels[4]);
-    }
-
-    Mat grad;
-    gradient.convertTo(grad, CV_32FC1);
-    normalize(grad, grad, 0.f, 1.f, NORM_MINMAX);
-
-    dst = src.clone();
-    for (int y = 1; y < src.rows - 1; ++y) {
-        const float* grad_row = grad.ptr<float>(y);
-        const uchar* label_row = dirLabel.ptr<uchar>(y);
-        uchar* dst_row = dst.ptr<uchar>(y);
-
-        for (int x = 1; x < src.cols - 1; ++x) {
-            if (label_row[x] > 0/* && grad_row[x] > 0.01*/) {
-                const Mat& kernel = vKernels[label_row[x] - 1];
-                Mat neighbor, result;
-                if (size == 3) {
-                    if (x - 1 < 0 || y - 1 < 0 || x + 1 >= src.cols || y + 1 >= src.rows) {
-                        WARNING("Pixel (" << x << ", " << y << ") on the border, skip it in the Edge Filter.");
-                        continue;
-                    }
-                    neighbor = src.rowRange(y - 1, y + 2).colRange(x - 1, x + 2);
-                } else {
-                    if (x - 2 < 0 || y - 2 < 0 || x + 2 >= src.cols || y + 2 >= src.rows) {
-                        WARNING("Pixel (" << x << ", " << y << ") on the border, skip it in the Edge Filter.");
-                        continue;
-                    }
-                    neighbor = src.rowRange(y - 2, y + 3).colRange(x - 2, x + 3);
-                }
-                multiply(neighbor, kernel, result, 1, CV_32FC1);
-                dst_row[x] = static_cast<uchar>(sum(result)[0]);
-            }
-        }
-    }
-}
-
-void applyEdgeFilterDown(const Mat& src, const Mat& gradient, const Mat& dirLabel, Mat& dst, double scale)
-{
-    assert(src.type() == CV_8UC1);
-    assert(dirLabel.type() == CV_8UC1);
-    assert(src.size() == gradient.size());
-//    assert(src.size() == dirLabel.size() * scale);
-    assert(gradient.channels() == 1);
-
-    static vector<Mat> vKernels;
-    if (vKernels.empty()) {
-        vKernels.resize(5);
-        vKernels[0] = (Mat_<float>(3, 3) << 3, 0, 3, 10, 0, 10, 3, 0, 3);
-        vKernels[0] = vKernels[0] / sum(vKernels[0]);
-        vKernels[1] = vKernels[0].t();
-        vKernels[2] = (Mat_<float>(3, 3) << 10, 3, 0, 3, 0, 3, 0, 3, 10);
-        vKernels[2] = vKernels[2] / sum(vKernels[2]);
-        vKernels[3] = (Mat_<float>(3, 3) << 0, 3, 10, 3, 0, 3, 10, 3, 0);
-        vKernels[3] = vKernels[3] / sum(vKernels[3]);
-        vKernels[4] = (Mat_<float>(3, 3) << 1, 1, 1, 1, 1, 1, 1, 1, 1);
-        vKernels[4] = vKernels[4] / sum(vKernels[4]);
-    }
-
-    Mat grad;
-    gradient.convertTo(grad, CV_32FC1);
-    normalize(grad, grad, 0.f, 1.f, NORM_MINMAX);
-
-    dst = src.clone();
-    for (int y = 1; y < src.rows - 1; ++y) {
-        const int y_scaled = y * scale;
-        const uchar* label_row = dirLabel.ptr<uchar>(y_scaled);
-        uchar* dst_row = dst.ptr<uchar>(y);
-
-        for (int x = 1; x < src.cols - 1; ++x) {
-            const int x_scaled = x * scale;
-            if (label_row[x_scaled] > 0) {
-                const Mat& kernel = vKernels[label_row[x_scaled] - 1];
-                const Mat& neighbor = src.rowRange(y - 1, y + 2).colRange(x - 1, x + 2);
-                Mat result;
-                multiply(neighbor, kernel, result, 1, CV_32FC1);
-                dst_row[x] = static_cast<uchar>(sum(result)[0]);
-            }
-        }
-    }
-    imwrite("/home/vance/output/ms/最小值滤波前.png", dst);
-
-    // 再做个最小值/均值滤波
-//    Mat gap;
-//    threshold(gradient, gap, 150, 255, THRESH_OTSU);
-    for (int y = 1; y < dst.rows - 1; ++y) {
-        const int y_scaled = y * scale;
-//        const float* grad_row = grad.ptr<float>(y);
-        const uchar* label_row = dirLabel.ptr<uchar>(y_scaled);
-//        const uchar* gap_row = gap.ptr<uchar>(y);
-        uchar* dst_row = dst.ptr<uchar>(y);
-
-        for (int x = 1; x < dst.cols - 1; ++x) {
-            const int x_scaled = x * scale;
-            if (label_row[x_scaled] > 0) {
-//                const Mat& kernel = vKernels[4];
-                const Mat& neighbor = dst.rowRange(y - 1, y + 2).colRange(x - 1, x + 2);
-//                Mat result;
-//                multiply(neighbor, kernel, result, 1, CV_32FC1);
-//                dst_row[x] = static_cast<uchar>(sum(result)[0]);
-                double minVal;
-                minMaxIdx(neighbor, &minVal);
-                dst_row[x] = static_cast<uchar>(minVal);
-            }
-        }
-    }
-    imwrite("/home/vance/output/ms/最小值滤波后.png", dst);
-}
-
-/**
- * @brief overlappedEdgesSmoothing  重叠区域的边缘平滑, 主要是为了消除前景重叠区域边缘处的锯齿
- * @param src   拼接后的前景图
- * @param mask  前景图中重叠区域的边缘掩模(降低计算量, 限制处理范围)
- * @param dst   结果图
- */
-void overlappedEdgesSmoothing(const cv::Mat& src, const cv::Mat& mask, cv::Mat& dst, double scale)
-{
-#define ENABLE_DEBUG_EDGE_FILTER 1
-#define SMOOTH_UPLOARD 0  // 梯度上采样后计算(反之下采样)
-
-    assert(scale > 0 && scale <= 1.);
-    const double invScale = 1. / scale;
-
-    static vector<Mat> vKernels;
-    if (vKernels.empty()) {
-        vKernels.resize(4);
-        vKernels[0] = (Mat_<char>(3, 3) << -3, 0, 3, -10, 0, 10, -3, 0, 3);
-        vKernels[1] = vKernels[0].t();
-        vKernels[2] = (Mat_<char>(3, 3) << -10, -3, 0, -3, 0, 3, 0, 3, 10);
-        vKernels[3] = (Mat_<char>(3, 3) << 0, 3, 10, -3, 0, 3, -10, -3, 0);
-    }
-
-    static vector<Point3_<uchar>> vDirLableColor;
-    if (vDirLableColor.empty()) {
-        vDirLableColor.resize(5);
-        vDirLableColor[0] = Point3_<uchar>(0, 0, 0);
-        vDirLableColor[1] = Point3_<uchar>(0, 0, 255);
-        vDirLableColor[2] = Point3_<uchar>(0, 255, 0);
-        vDirLableColor[3] = Point3_<uchar>(255, 0, 0);
-        vDirLableColor[4] = Point3_<uchar>(255, 255, 255);
-    }
-
-    // 1.下采样并在Y域上求解4个方向的梯度
-    Mat srcGray, src_L1, srcGray_L1, mask_L1;
-//    Mat src_yuv, src_luma, src_chroma;
-//    vector<Mat> srcChannels_yuv(3);
-//    cvtColor(src, src_yuv, COLOR_BGR2YCrCb);
-//    split(src_yuv, srcChannels_yuv);
-
-    cvtColor(src, srcGray, COLOR_BGR2GRAY);
-    resize(src, src_L1, Size(), scale, scale);
-    resize(mask, mask_L1, Size(), scale, scale);
-    resize(srcGray, srcGray_L1, Size(), scale, scale);
-    vector<Mat> vGradient_L1(4);   // CV_32FC1
-    for (int i = 0; i < 4; ++i) {
-        filter2D(srcGray_L1, vGradient_L1[i], CV_32FC1, vKernels[i], Point(-1, -1), 0, BORDER_REPLICATE);
-    }
-#if ENABLE_DEBUG && ENABLE_DEBUG_EDGE_FILTER
-    Mat g12 = (cv::abs(vGradient_L1[0]) + cv::abs(vGradient_L1[1])) * 0.5;
-    Mat g34 = (cv::abs(vGradient_L1[2]) + cv::abs(vGradient_L1[3])) * 0.5;
-    normalize(g12, g12, 0.f, 1.f, NORM_MINMAX);
-    g12.convertTo(g12, CV_8UC1, 255);
-    normalize(g34, g34, 0.f, 1.f, NORM_MINMAX);
-    g34.convertTo(g34, CV_8UC1, 255);
-    bitwise_or(0, g12, g12, mask_L1);
-    bitwise_or(0, g34, g34, mask_L1);
-    imwrite("/home/vance/output/ms/L1-初始梯度方向1+2.png", g12);
-    imwrite("/home/vance/output/ms/L1-初始梯度方向3+4.png", g34);
-#endif
-
-    // 2.对掩模对应的区域的梯度, 选出4个方向中的最大者并标记最大梯度方向
-    Mat maxGradientFull_L1 = Mat::zeros(srcGray_L1.size(), CV_32FC1);
-    Mat maxGradientEdge_L1 = Mat::zeros(srcGray_L1.size(), CV_32FC1);
-    Mat dirLabel_L1 = Mat::zeros(srcGray_L1.size(), CV_8UC1);   // 掩模区内边缘的方向
-    Mat dirLabelColor_L1 = Mat::zeros(srcGray_L1.size(), CV_8UC3);
-    for (int y = 0; y < srcGray_L1.rows; ++y) {
-        const char* mask_row = mask_L1.ptr<char>(y);
-        float* grad_row = maxGradientEdge_L1.ptr<float>(y);
-        char* label_row = dirLabel_L1.ptr<char>(y);
-        Point3_<uchar>* color_row = dirLabelColor_L1.ptr<Point3_<uchar>>(y);
-
-        float* tmp_row = maxGradientFull_L1.ptr<float>(y);
-
-        for (int x = 0; x < srcGray_L1.cols; ++x) {
-//            if (mask_row[x] != 0) {
-            int label = 0;  // 默认无梯度则黑色
-            float maxGradient = 0.f;
-            for (int i = 0; i < 4; ++i) {
-                const float g = abs(vGradient_L1[i].at<float>(y, x)); // 绝对值符号使正负方向为同一方向
-                if (g > maxGradient) {
-                    maxGradient = g;
-                    label = i + 1;
-                }
-            }
-            tmp_row[x] = maxGradient;
-
-            if (mask_row[x] != 0) {
-                grad_row[x] = maxGradient;
-                label_row[x] = label;
-                color_row[x] = vDirLableColor[label];
-            }
-        }
-    }
-    normalize(maxGradientEdge_L1, maxGradientEdge_L1, 0.f, 1.f, NORM_MINMAX);  // 归一化
-    Mat maxGradient_L1;
-    maxGradientEdge_L1.convertTo(maxGradient_L1, CV_8UC1, 255);
-    threshold(maxGradient_L1, maxGradient_L1, 10, 0, THRESH_TOZERO);  // 太小的梯度归0
-
-    // 大梯度的白边区域
-    Mat largeGradienMask_L1;
-    threshold(maxGradient_L1, largeGradienMask_L1, 150, 255, THRESH_OTSU);
-
-#if ENABLE_DEBUG && ENABLE_DEBUG_EDGE_FILTER
-    imwrite("/home/vance/output/ms/L1-重叠区域最大梯度强度.png", maxGradient_L1);
-    imwrite("/home/vance/output/ms/L1-重叠区域最大梯度方向.png", dirLabelColor_L1);
-    imwrite("/home/vance/output/ms/L1-重叠区域最大梯度otsu.png", largeGradienMask_L1);
-
-    normalize(maxGradientFull_L1, maxGradientFull_L1, 0.f, 1.f, NORM_MINMAX);
-    maxGradientFull_L1.convertTo(maxGradientFull_L1, CV_8UC1, 255);
-    imwrite("/home/vance/output/ms/L1-初始梯度方向最大.png", maxGradientFull_L1);
-    Mat toShow = src.clone();
-#endif
-
-
-////////////////////////////////////////////////////
-//    // 先在小尺度上对大梯度区域做金字塔融合滤波.
-//    Mat src_L2, mask_L2, srcGray_L2, largeGradienMask_L2;
-//    resize(src_L1, src_L2, Size(), scale, scale);
-//    resize(mask_L1, mask_L2, Size(), scale, scale);
-//    resize(largeGradienMask_L1, largeGradienMask_L2, Size(), scale, scale);
-//    resize(srcGray_L1, srcGray_L2, Size(), scale, scale);
-
-////    vector<Mat> vGradient_L2(4);
-////    for (int i = 0; i < 4; ++i)
-////        filter2D(srcGray_L2, vGradient_L2[i], CV_32FC1, vKernels[i], Point(-1, -1), 0, BORDER_REPLICATE);
-
-////    Mat maxGradient_L2 = Mat::zeros(srcGray_L2.size(), CV_32FC1);
-////    Mat dirLabel_L2 = Mat::zeros(srcGray_L2.size(), CV_8UC1);   // 掩模区内边缘的方向
-////    Mat dirLabelColor_L2 = Mat::zeros(srcGray_L2.size(), CV_8UC3);
-////    for (int y = 0; y < srcGray_L2.rows; ++y) {
-////        const char* mask_row = /*mask_L2*/largeGradienMask_L2.ptr<char>(y);
-////        float* grad_row = maxGradient_L2.ptr<float>(y);
-////        char* label_row = dirLabel_L2.ptr<char>(y);
-////        Point3_<uchar>* color_row = dirLabelColor_L2.ptr<Point3_<uchar>>(y);
-
-////        for (int x = 0; x < srcGray_L2.cols; ++x) {
-////            if (mask_row[x] != 0) {
-////                int label = 0;  // 默认无梯度则黑色
-////                float maxGradient = 0.f;
-////                for (int i = 0; i < 4; ++i) {
-////                    const float g = abs(vGradient_L2[i].at<float>(y, x)); // 绝对值符号使正负方向为同一方向
-////                    if (g > maxGradient) {
-////                        maxGradient = g;
-////                        label = i + 1;
-////                    }
-////                }
-////                grad_row[x] = maxGradient;
-////                label_row[x] = label;
-////                color_row[x] = vDirLableColor[label];
-////            }
-////        }
-////    }
-////    normalize(maxGradient_L2, maxGradient_L2, 0.f, 1.f, NORM_MINMAX);  // 归一化
-////    maxGradient_L2.convertTo(maxGradient_L2, CV_8UC1, 255);
-////    imwrite("/home/vance/output/ms/L2-重叠区域最大梯度强度.png", maxGradient_L2);
-////    imwrite("/home/vance/output/ms/L2-重叠区域最大梯度方向.png", dirLabelColor_L2);
-////    exit(0);
-
-//    vector<Mat> srcLapPyr(3), dstLapPyr(3);
-//    Mat tmp;
-//    resize(src_L1, tmp, src.size());
-//    dstLapPyr[0] = src - tmp;
-//    resize(src_L2, tmp, src_L1.size());
-//    dstLapPyr[1] = src_L1 - tmp;
-//    dstLapPyr[2] = src_L2;
-
-//    vector<Mat> srcChannels_L2(3), dstChanels_L2(3), dstChanels_L1(3);
-//    split(src_L2, srcChannels_L2);
-//    dstChanels_L2 = srcChannels_L2;
-
-//    vector<Mat> vDstScaledFilterd(3), vDst_L1(3);
-//    for (int i = 0; i < 3; ++i)
-//        applyEdgeFilterDown(srcChannels_L2[i], largeGradienMask_L2, dirLabel_L1, dstChanels_L2[i], 0.5);
-//    Mat dst_L1, dst_L2;
-//    merge(dstChanels_L2, dst_L2);
-//    resize(dst_L2, dst_L1, src_L1.size());
-//    imwrite("/home/vance/output/ms/L2-EF+最小值滤波前.png", src_L2);
-//    imwrite("/home/vance/output/ms/L2-EF+最小值滤波后.png", dst_L2);
-
-//    imwrite("/home/vance/output/ms/L1-从L2上采样结果.png", dst_L1);
-////    dst_L1 += dstLapPyr[1];
-////    imwrite("/home/vance/output/ms/L1-从L2上采样+Lap结果.png", dst_L1);
-
-//    split(dst_L1, dstChanels_L1);
-//    for (int i = 0; i < 3; ++i)
-//        applyEdgeFilter(dstChanels_L1[i], maxGradientEdge_L1, dirLabel_L1, dstChanels_L1[i]);
-
-//    Mat dstFilter_L1, dst_L0;
-//    merge(dstChanels_L1, dstFilter_L1);
-//    imwrite("/home/vance/output/ms/L1-从L2上采样+EF结果.png", dstFilter_L1);
-//    resize(dstFilter_L1, dst_L0, src.size());
-//    imwrite("/home/vance/output/ms/L0-从L1上采样结果.png", dst_L0);
-////    dst_L0 += dstLapPyr[0];
-////    imwrite("/home/vance/output/ms/L0-从L1上采样+Lap结果.png", dst_L0);
-
-//    Mat toAdd;
-//    dst = src.clone();
-//    bitwise_and(dst_L0, 255, toAdd, mask);
-//    bitwise_and(dst, 0, dst, mask);
-//    dst += toAdd;
-////////////////////////////////////////////////////
-
-    vector<Point> vPointsToSmooth;
-    vector<int> vDirsToSmooth;
-    vPointsToSmooth.reserve(10000);
-    vDirsToSmooth.reserve(10000);
-
-    // 在低尺度上滤波一次, 然后上采样回原尺度加权融合
-//    vector<Mat> vDstScaledFilterd(3), vDst_L1(3);
-//    resize(dstChanels[0], vDst_L1[0], Size(), scale, scale);
-//    resize(dstChanels[1], vDst_L1[1], Size(), scale, scale);
-//    resize(dstChanels[2], vDst_L1[2], Size(), scale, scale);
-//    for (int i = 0; i < 3; ++i)
-//        applyEdgeFilter(vDst_L1[i], maxGradient_L1, dirLabel_L1, vDstScaledFilterd[i]);
-
-//    Mat dstScaledFilterd, dstFilterdOnce;
-//    merge(vDstScaledFilterd, dstScaledFilterd);
-//    resize(dstScaledFilterd, dstFilterdOnce, src.size());
-
-//    imwrite("/home/vance/output/ms/前景(L1)低尺度滤波前.png", src_L1);
-//    imwrite("/home/vance/output/ms/前景(L1)低尺度滤波后.png", dstScaledFilterd);
-//    imwrite("/home/vance/output/ms/前景低尺度滤波.png", dstFilterdOnce);
-
-    vector<Mat> dstChanels;
-    dst = src.clone();
-//    dst.setTo(0, mask);
-
-//    bitwise_or(dst, dstFilterdOnce, dst, mask);
-//    imwrite("/home/vance/output/ms/前景低尺度滤波应用到原尺度.png", dst);
-    split(dst, dstChanels);
-
-    // 再到原尺度上滤波
-    for (int y = 0; y < src.rows; ++y) {
-        const int y_scaled = cvRound(y * scale);
-        if (y_scaled >= dirLabel_L1.rows)
-            continue;
-
-        const uchar* edge_row = maxGradient_L1.ptr<uchar>(y_scaled);
-        const uchar* label_row = dirLabel_L1.ptr<uchar>(y_scaled);
-        for (int x = 0; x < src.cols; ++x) {
-            const int x_scaled = cvRound(x * scale);
-            if (x_scaled >= dirLabel_L1.cols)
-                continue;
-
-            if (label_row[x_scaled] > 0 /*&& edge_row[x_scaled] > 10*/) {
-                applyEdgeFilter(dstChanels[0], x, y, label_row[x_scaled], 5);
-                applyEdgeFilter(dstChanels[1], x, y, label_row[x_scaled], 5);
-                applyEdgeFilter(dstChanels[2], x, y, label_row[x_scaled], 5);
-//                vPointsToSmooth.push_back(Point(x, y));
-//                vDirsToSmooth.push_back(label_row[x_scaled]);
-//                toShow.at<Vec3b>(y, x) = Vec3b(0,255,0);
-            }
-        }
-    }
-
-////    applyEdgeFilter(srcChannels[0], dstChanels[0], vPointsToSmooth, vDirsToSmooth);
-////    applyEdgeFilter(srcChannels[1], dstChanels[1], vPointsToSmooth, vDirsToSmooth);
-////    applyEdgeFilter(srcChannels[2], dstChanels[2], vPointsToSmooth, vDirsToSmooth);
-    merge(dstChanels, dst);
-
-#if ENABLE_DEBUG && ENABLE_DEBUG_EDGE_FILTER
-    Mat input = src.clone(), output = dst.clone();
-    vector<vector<Point>> contours;
-    findContours(mask, contours, RETR_LIST, CHAIN_APPROX_SIMPLE);
-    drawContours(input, contours, -1, Scalar(0, 255, 0), 1);
-    drawContours(output, contours, -1, Scalar(0, 255, 0), 1);
-    //    namedLargeWindow("points to smooth", 1);
-    namedLargeWindow("src", 1);
-    namedLargeWindow("dst", 1);
-    //    imshow("src", input);
-    //    imshow("dst", dst);
-    imwrite("/home/vance/output/ms/输入前景和边缘掩模.png", input);
-    imwrite("/home/vance/output/ms/输出图像和边缘掩模.png", output);
-//    imwrite("/home/vance/output/ms/被处理的区域.png", toShow);
-    //    imshow("points to smooth", toShow);
-    waitKey(10);
-    destroyAllWindows();
-#endif
-}
 
 }  // namespace ms

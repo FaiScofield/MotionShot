@@ -1,39 +1,91 @@
 #ifndef MOTION_SHOT_H
 #define MOTION_SHOT_H
 
-#include <opencv2/core/core.hpp>
-#include <string>
-#include <vector>
+#include "precompiled.h"
+#include "ImageBlender/cvBlenders.h"
+#include "ImageStitcher/ImageStitcher.h"
+#include "Thirdparty/aip-cpp-sdk-0.8.5/body_analysis.h"
+
+#include <map>
+#include <memory>
+
+#include <opencv2/video/video.hpp>
 
 namespace ms
 {
 
-//class BackgroundExtractor;
-
 class MotionShot
 {
 public:
-    MotionShot() : _N(0), _delta(3) {}
-//    MotionShot(BackgroundExtractor* fe) : _pForegroundExtractor(fe), _N(0), _delta(3) {}
-    ~MotionShot() {}
+    enum Status {
+        OK = 0,
+        ERR_NEED_MORE_IMGS = 1,
+        ERR_HOMOGRAPHY_EST_FAIL = 2,
+        ERR_CAMERA_PARAMS_ADJUST_FAIL = 3,
+        ERR_FORE_DETECT_FAIL = 4,
+        ERR_BLEND_FAIL = 5,
+        ERR_BAD_ARGUMENTS = -1
+    };
 
-    inline void SetDelta(int d) { _delta = d; }
-    inline int GetDelta() const { return _delta; }
-    inline cv::Mat GetResult() { return _result; }
-    inline std::vector<cv::Mat> GetForeground() const { return _vForegrounds; }
+    MotionShot();
 
-    void Apply(int d = 2);
+    inline Mat getBaseFrame() const { return baseFrame_.clone(); }
+    inline vector<Mat> getForeground() const { return foregrounds_; }
+
+
+    Status setInputs(InputArrayOfArrays imgs, InputArrayOfArrays maks = cv::noArray());
+
+    Status run();
+
+    Status estimateTransform();
+
+    Status warpImages();
+
+    Status detectorForeground();
+
+    Status compose();
+
+
+    void detectorForegroundWithNN(InputArray src, InputArray mask, OutputArray dst);
 
 private:
-//    BackgroundExtractor* _pForegroundExtractor;
+    void prepare(const vector<Point>& corners, const vector<Size>& sizes);
+    void prepare(Rect dst_roi);
+    void makeBorderForWarpedImages();
 
-    std::vector<cv::Mat> _vFrames;
-    std::vector<cv::Mat> _vForegrounds;
-    std::vector<cv::Mat> _vForegroundGTs;
+    void foreMaskFilter(InputArray src, OutputArray dst); //! TODO
 
-    size_t _N;
-    int _delta;
-    cv::Mat _result;
+    int checkOverlappedArea(const vector<Rect>&); //! TODO
+    Status composeWithOverlapped();
+    Status composeWithoutOverlapped();
+
+    // baidu aip
+    std::unique_ptr<aip::Bodyanalysis> bodyAnalyst_;
+    std::map<string, string> bodySegOptions_;
+
+    // custom class
+    Ptr<ImageStitcher> stitcher_;
+    Ptr<cvBlender> blender_;
+    Ptr<cv::BackgroundSubtractorMOG2> detector_;
+
+    // images
+    vector<Mat> inputImages_, inputMasks_;
+//    vector<Mat> scaledImages_, scaledMasks_;
+    vector<Mat> warpedImages_, warpedMasks_;
+    vector<Point> corners_/*, scaledCorners_*/;
+    vector<Size> inputSizes_, warpedSize_, scaledSize_/*, scaledWarpedSize_*/;
+
+    vector<Mat> foregrounds_, foregroundMasks_;
+    vector<Mat> homograpies_;
+    vector<Rect> foregroundRects_;
+
+    Mat baseFrame_, baseFrameMask_, pano_;
+
+    size_t numImgs_, bfi_;  // base frame index
+    vector<size_t> indices_;
+
+    Mat dstImg_, dstMask_;
+    Rect dstROI_;
 };
 
 }  // namespace ms

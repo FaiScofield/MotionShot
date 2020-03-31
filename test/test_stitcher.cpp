@@ -1,15 +1,18 @@
 #include "utility.h"
 #include "ImageStitcher/ImageStitcher.h"
-#include <iostream>
-#include <opencv2/core/core.hpp>
-#include <opencv2/highgui/highgui.hpp>
+
+//#define USE_CUSTOM_STITCHER 0
+
+//#if !USE_CUSTOM_STITCHER
 #include <opencv2/stitching.hpp>
-#include <boost/filesystem.hpp>
+//#include <opencv2/stitching/detail/blenders.hpp>
+//#endif
+
 
 using namespace ms;
 using namespace std;
 using namespace cv;
-namespace bf = boost::filesystem;
+namespace cvd = cv::detail;
 
 const int delta = 3;
 
@@ -24,9 +27,6 @@ int main(int argc, char* argv[])
         "{start     a|0|start index for image sequence}"
         "{num       n|0|number to process for image sequence}"
         "{scale     c|1|scale to resize image, 0.15 for type HUAWEI}"
-        "{delta     d|1|delta frames to stitch between image sequence}"
-        "{flip      p|0|flip image for type VIDEO, 0(x), +(y), -(xy)}"
-        "{rotate    r|-1|rotate image for type VIDEO, r = cv::RotateFlags(0, 1, 2)}"
         "{help      h|false|show help message}");
 
     if (argc < 2 || parser.get<bool>("help")) {
@@ -56,11 +56,7 @@ int main(int argc, char* argv[])
     cout << " - folder = " << str_folder << endl;
     int start = parser.get<int>("start");
     int num = parser.get<int>("num");
-    int delta = parser.get<int>("delta");
     double scale = parser.get<double>("scale");
-    int flip = parser.get<int>("flip");
-    int rotate = parser.get<int>("rotate");
-    assert(delta >= 1);
 
     //// read images
     vector<Mat> vImages, toStitch;
@@ -95,77 +91,52 @@ int main(int argc, char* argv[])
         num = min(num, static_cast<int>(vImages.size()));
     cout << " - start = " << start << endl;
     cout << " - num = " << num << endl;
-    cout << " - delta = " << delta << endl;
     cout << " - scale = " << scale << endl;
-    cout << " - flip flag = " << flip << endl;
-    cout << " - rotate flag = " << rotate << endl;
     assert(scale > 0);
     if (num < 2) {
         cerr << "Too less imagesinput!" << endl;
         exit(-1);
     }
 
-    resizeFlipRotateImages(vImages, scale, flip, rotate);
-
-    // toStitch
-    image1 = vImages.front();
-    image2 = vImages.back();
-    if (inputType == TWO_IMAGES) {
-        assert(vImages.size() == 2);
-        toStitch = vImages;
-    } else {
-        toStitch.reserve(num / delta);
-        for (int i = 0; i < num; ++i) {
-            if (i % delta == 0)
-                toStitch.push_back(vImages[i]);
-        }
-    }
-    destroyAllWindows();
-    if (toStitch.size() < 2) {
-        cerr << "Too less images or too big delta(" << delta << ")!" << endl;
-        exit(-1);
-    }
-
-    Mat fl;
-    hconcat(image1, image2, fl);
-//    namedWindow("first and last images", WINDOW_FREERATIO | WINDOW_GUI_EXPANDED);
-    imshow("first and last images", fl);
-    imwrite("/home/vance/output/first_and_last.bmp", fl);
 
     /// start stitching
     cout << "Stitching... This will take a while..." << endl;
-    cout << " - Tatal image count = " << toStitch.size() << endl;
+    cout << " - Tatal image count = " << vImages.size() << endl;
 
     TickMeter tm;
     tm.start();
 
-    Mat pano;
-    Ptr<Stitcher> stitcher1 = Stitcher::create(Stitcher::SCANS);
-    // stitcher->setWarper(); //! TODO 投影方式修改
-    Stitcher::Status status = stitcher1->stitch(toStitch, pano);
+    /// 1. opencv stitcher
+    Ptr<cv::Stitcher> stitcher1 = cv::Stitcher::create(Stitcher::PANORAMA);
+    stitcher1->setWarper(makePtr<PlaneWarper>());
+    stitcher1->setExposureCompensator(makePtr<cvd::NoExposureCompensator>());
+
+    Mat pano1;
+    Stitcher::Status status = stitcher1->stitch(vImages, pano1);
     if (status != Stitcher::OK) {
-        cerr << "Can't stitch images, error code = " << int(status) << endl;
-        system("pause");
+        ERROR("Can't stitch images (cv), error code = " << status);
         return -1;
     }
+
     tm.stop();
-    double time = tm.getTimeSec() / tm.getCounter();
-    cout << " - Time cost in stitching = " << time << "s" << endl;
+    cout << " - Time cost in stitching = " << tm.getTimeSec() << "s" << endl;
     cout << " - Image size = " << image1.size() << endl;
-    cout << " - Pano size = " << pano.size() << endl;
+    cout << " - Pano size = " << pano1.size() << endl;
 
-//    namedWindow("Result Pano", WINDOW_FREERATIO | WINDOW_GUI_EXPANDED);
-    imshow("Result Pano CV", pano);
-    string fileOut = "/home/vance/output/result_pano_cv_" + to_string(vImages.size()) + "-"
-                     + to_string(toStitch.size()) + ".bmp";
-    imwrite(fileOut, pano);
+    NamedLargeWindow("Result Pano CV");
+    imshow("Result Pano CV", pano1);
+    imwrite("/home/vance/output/result_pano_cv.jpg", pano1);
 
 
-    // our simple impl
-    ms::ImageStitcher stitcher2;
-    Mat pano2, warpedMask1;
-    if (!stitcher2.stitch(image1, image2, pano2, warpedMask1))
+    /// 2. custom stitcher
+    Ptr<ImageStitcher> stitcher2 = ImageStitcher::create(ImageStitcher::AKAZE, ImageStitcher::BF);
+
+    Mat pano2;
+    ImageStitcher::Status status2 = stitcher2->stitch(vImages, pano2);
+    if (status2 != ImageStitcher::OK) {
+        ERROR("Can't stitch2 images (custom), error code = " << status);
         return -1;
+    }
 
 //    Mat H21 = is.computeHomography(image1, image2);
 
@@ -206,9 +177,10 @@ int main(int argc, char* argv[])
 //    int offset_y = cvFloor(abs(miny));
 //    image2.copyTo(
 //        pano2.rowRange(offset_y, offset_y + image2.rows).colRange(offset_x, offset_x + image2.cols));
-    imshow("Result Pano2", pano2);
-    imwrite("/home/vance/output/result_pano_H.bmp", pano2);
 
+    NamedLargeWindow("Result Pano Custom");
+    imshow("Result Pano Custom", pano2);
+    imwrite("/home/vance/output/result_pano_custom.jpg", pano2);
 
     waitKey(0);
 

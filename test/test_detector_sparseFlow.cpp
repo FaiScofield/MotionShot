@@ -11,7 +11,6 @@
 #include <iostream>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
-#include <opencv2/stitching.hpp>
 #include <opencv2/video/video.hpp>
 #include <opencv2/photo.hpp>
 #include <opencv2/features2d.hpp>

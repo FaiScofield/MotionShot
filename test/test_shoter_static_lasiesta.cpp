@@ -122,7 +122,7 @@ int main(int argc, char* argv[])
     vector<Mat> vImgsToProcess;
     vector<int> vIdxToProcess;
     vector<vector<int>> vvIdxPerIter;
-    extractImagesToStitch(vImages, vImgsToProcess, vIdxToProcess, vvIdxPerIter, minFores, maxFores);
+    ExtractImagesToStitch(vImages, vImgsToProcess, vIdxToProcess, vvIdxPerIter, minFores, maxFores);
 
     timer.stop();
     TIMER("系统初始化耗时(s): " << timer.getTimeSec());
@@ -148,7 +148,7 @@ int main(int argc, char* argv[])
             // blender
             Mat frame_S, maskFiltered;
             frame.convertTo(frame_S, CV_16SC3);
-            smoothMaskWeightEdge(foreMask, maskFiltered, 0); // 过渡边缘
+            SmoothMaskWeightEdge(foreMask, maskFiltered, 0); // 过渡边缘
             blender->feed(frame_S, maskFiltered, Point(0, 0));
         }
 
@@ -191,7 +191,7 @@ int main(int argc, char* argv[])
         blender2->prepare(disRoi);
 
         Mat foregroundMaskFinal, backgroundMaskFinal, maskFinal;
-        smoothMaskWeightEdge(allForegroundMask, foregroundMaskFinal, 0); // 过渡边缘
+        SmoothMaskWeightEdge(allForegroundMask, foregroundMaskFinal, 0); // 过渡边缘
         bitwise_not(foregroundMaskFinal, backgroundMaskFinal);
 //        hconcat(foregroundMaskFinal, backgroundMaskFinal, maskFinal);
 //        imshow("foreground & background maskFinal", maskFinal);

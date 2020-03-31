@@ -6,6 +6,10 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 message("===> CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 
+IF((CMAKE_BUILD_TYPE MATCHES "Debug") OR (CMAKE_BUILD_TYPE MATCHES "DEBUG") OR (CMAKE_BUILD_TYPE MATCHES "debug"))
+    ADD_DEFINITIONS(-DDEBUG)
+ENDIF()
+
 # -march=native 参数不可用, 会使g2o出错.
 if(CMAKE_COMPILER_IS_GNUCXX)
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -Wall -ggdb") # -g
@@ -13,17 +17,17 @@ if(CMAKE_COMPILER_IS_GNUCXX)
 endif()
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wno-deprecated-declarations -Wno-unused-variable")
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake/")
+#set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake/")
 
 # Boost
 find_package(Boost REQUIRED COMPONENTS filesystem)
 include_directories(${Boost_INCLUDE_DIRS})
 if(Boost_FOUND)
- message("===> Boost Information: Version: ${Boost_VERSION}" )
- message("===> Boost Information: Include Dir: ${Boost_INCLUDE_DIRS}" )
- message("===> Boost Information: Libs Dir: ${Boost_LIBRARIES}" )
+    message("===> Boost Information: Version: ${Boost_VERSION}" )
+    message("===> Boost Information: Include Dir: ${Boost_INCLUDE_DIRS}" )
+    message("===> Boost Information: Libs Dir: ${Boost_LIBRARIES}" )
 else()
- message("===> Boost Not Found!!!" )
+    message("===> Boost Not Found!!!" )
 endif()
 
 ## OpenCV
@@ -48,37 +52,38 @@ endif()
 
 include_directories(
     ${PROJECT_SOURCE_DIR}
+    ${PROJECT_SOURCE_DIR}/include/MotionShot
     ${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/src/MotionDetector
     ${PROJECT_SOURCE_DIR}/src/MotionTracker
     ${PROJECT_SOURCE_DIR}/src/MotionShoter
     ${PROJECT_SOURCE_DIR}/src/ImageStitching
-    /usr/include/eigen3
-
+    ${PROJECT_SOURCE_DIR}/Thirdparty/aip-cpp-sdk-0.8.5
+    /usr/include/eigen3 # for optical flow
 )
 
 set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
 set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 
 # Lib
-aux_source_directory(${PROJECT_SOURCE_DIR}/src/MotionDetector DETECTOR_SRC_FILES)
-aux_source_directory(${PROJECT_SOURCE_DIR}/src/MotionTracker  TRACKER_SRC_FILES)
+#aux_source_directory(${PROJECT_SOURCE_DIR}/src/MotionDetector DETECTOR_SRC_FILES)
+#aux_source_directory(${PROJECT_SOURCE_DIR}/src/MotionTracker  TRACKER_SRC_FILES)
 aux_source_directory(${PROJECT_SOURCE_DIR}/src/MotionShoter   SHOTER_SRC_FILES)
 aux_source_directory(${PROJECT_SOURCE_DIR}/src/ImageStitcher  STITCHER_SRC_FILES)
 aux_source_directory(${PROJECT_SOURCE_DIR}/src/ImageBlender   BLENDER_SRC_FILES)
 add_library(${PROJECT_NAME} SHARED
-    ${DETECTOR_SRC_FILES}
-    ${TRACKER_SRC_FILES}
+#    ${DETECTOR_SRC_FILES}
+#    ${TRACKER_SRC_FILES}
     ${SHOTER_SRC_FILES}
     ${STITCHER_SRC_FILES}
     ${BLENDER_SRC_FILES}
+    ${PROJECT_SOURCE_DIR}/src/utility.cpp
 )
 target_link_libraries(${PROJECT_NAME}
     ${OpenCV_LIBS}
     ${Boost_LIBRARIES}
-    # ${CSPARSE_LIBRARY}
-    # ${CHOLMOD_LIBRARIES}
-    # ${G2O_LIBS}
+    ${JSONCPP_LIBRARIES}
+    -lssl -lcrypto -lcurl
 )
 set(LIB_MotionShot ${PROJECT_NAME})
 

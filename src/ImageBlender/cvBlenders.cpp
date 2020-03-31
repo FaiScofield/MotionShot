@@ -48,11 +48,6 @@
 #include <iostream>
 #include <opencv2/imgproc.hpp>
 
-#define ENABLE_DEBUG_RESULT 1
-#if ENABLE_DEBUG_RESULT
-#include <opencv2/highgui.hpp>
-#endif
-
 namespace ms
 {
 
@@ -62,21 +57,23 @@ using namespace cv;
 static const float WEIGHT_EPS = 1e-5f;  // 加上微小量防止分母为0
 
 
+//////////////////////////////////////////////////////////////////////////////
+///
 Ptr<cvBlender> cvBlender::createDefault(int type, bool try_gpu)
 {
+    if (type == NO)  // 新来的覆盖老的
+        return makePtr<cvBlender>();
     if (type == FEATHER)
         return makePtr<cvFeatherBlender>(try_gpu);
-    if (type == MULTI_BAND)
-        return makePtr<cvMultiBandBlender>(try_gpu);
-    return makePtr<cvBlender>();
+    else if (type == MULTI_BAND)
+        return makePtr<cvMultiBandBlender>(try_gpu, 3);
+    CV_Error(Error::StsBadArg, "Unsupported blending method");
 }
 
-
-void cvBlender::prepare(const std::vector<Point>& corners, const std::vector<Size>& sizes)
+void cvBlender::prepare(const vector<Point>& corners, const vector<Size>& sizes)
 {
-    prepare(resultRoi(corners, sizes));
+    prepare(ResultRoi(corners, sizes));
 }
-
 
 void cvBlender::prepare(Rect dst_roi)
 {
@@ -92,7 +89,6 @@ void cvBlender::prepare(Rect dst_roi)
     overlapped_edges_mask_.create(dst_roi.size(), CV_8U);
     overlapped_edges_mask_.setTo(Scalar::all(0));
 }
-
 
 void cvBlender::feed(InputArray _img, InputArray _mask, Point tl)
 {
@@ -120,7 +116,6 @@ void cvBlender::feed(InputArray _img, InputArray _mask, Point tl)
     }
 }
 
-
 void cvBlender::blend(InputOutputArray dst, InputOutputArray dst_mask)
 {
     UMat mask;
@@ -130,6 +125,18 @@ void cvBlender::blend(InputOutputArray dst, InputOutputArray dst_mask)
     dst_mask.assign(dst_mask_);
     dst_.release();
     dst_mask_.release();
+}
+
+void cvBlender::getMiddleResult(InputOutputArray dst, InputOutputArray dst_mask)
+{
+    UMat mask;
+    compare(dst_mask_, 0, mask, CMP_EQ);
+
+    UMat dst_tmp = dst_.clone();
+    dst_tmp.setTo(Scalar::all(0), mask);
+
+    dst.assign(dst_tmp);
+    dst_mask.assign(dst_mask_);
 }
 
 Mat cvBlender::getOverlappedEdgesMask(int size) const
@@ -146,7 +153,9 @@ Mat cvBlender::getOverlappedEdgesMask(int size) const
 }
 
 
-inline cvFeatherBlender::cvFeatherBlender(float sharpness, bool cover) : enable_cover_(cover)
+//////////////////////////////////////////////////////////////////////////////
+///
+cvFeatherBlender::cvFeatherBlender(float sharpness, bool cover) : enable_cover_(cover)
 {
     if (cover)
         sharpness_ = 1.0;
@@ -161,18 +170,16 @@ void cvFeatherBlender::prepare(Rect dst_roi)
     dst_weight_map_.setTo(0);
 }
 
-
 void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
 {
-#define ENABLE_DEBUG_RESULT_FEATHER_FEED1 0
-
+#define ENABLE_DEBUG_FEATHER_FEED 0
 
     Mat img = _img.getMat();
     Mat dst = dst_.getMat(ACCESS_RW);
-    const bool largeWin = (img.cols > 1600 || img.rows > 1200);
-
     assert(img.type() == CV_16SC3);
     assert(mask.type() == CV_8UC1);
+
+    const bool largeWin = (img.cols > 1600 || img.rows > 1200);
 
     // 1.为输入的掩模分析权重
     if (enable_cover_) {  // 覆盖模式下输入的掩模已经自带权重
@@ -189,7 +196,7 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
         Mat srcMask, dstMask;
         srcMask = mask.getMat();
         dst_weight_map.convertTo(dstMask, CV_8UC1, 255);
-        threshold(srcMask, srcMask, 254, 255, THRESH_BINARY); // 获取100%是前景的区域
+        threshold(srcMask, srcMask, 254, 255, THRESH_BINARY);  // 获取100%是前景的区域
 
         Mat overlappedArea, ignoreArea, edge;
         bitwise_and(dstMask, 255, overlappedArea, srcMask);         // 得到重叠区域
@@ -211,6 +218,8 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
         bitwise_and(gapMask, 0, gapMask, maksEroded);
         overlapped_edges_mask_ += gapMask;
 
+        {
+#if DEBUG && ENABLE_DEBUG_FEATHER_FEED
 //        Mat imgU, gap, weightMap_U;
 //        img.convertTo(imgU, CV_8UC3);
 //        weight_map.convertTo(weightMap_U, CV_8UC1);
@@ -219,19 +228,22 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
 //        bitwise_and(weightMap_U, 0, weightMap_U, gap);
 //        imwrite("/home/vance/output/ms/去除gap后.png", weightMap_U);
 
-//        namedLargeWindow("重叠区域边缘(考虑覆盖)", largeWin);
+//        NamedLargeWindow("重叠区域边缘(考虑覆盖)", largeWin);
 //        imshow("重叠区域边缘(考虑覆盖)", overlapped_edges_);
-//        namedLargeWindow("重叠区域边缘掩模(考虑覆盖)", largeWin);
+//        NamedLargeWindow("重叠区域边缘掩模(考虑覆盖)", largeWin);
 //        imshow("重叠区域边缘掩模(考虑覆盖)", overlapped_edges_mask_);
 //        waitKey(0);
+#endif
+        }
     }
 
     int dx = tl.x - dst_roi_.x;
     int dy = tl.y - dst_roi_.y;
 
-#if ENABLE_DEBUG_RESULT_FEATHER_FEED1 && ENABLE_DEBUG_RESULT
-    Mat disU;
-    dst.convertTo(disU, CV_8U);
+    {
+#if DEBUG && ENABLE_DEBUG_FEATHER_FEED
+//    Mat disU;
+//    dst.convertTo(disU, CV_8U);
 //    imshow("dst before feed", disU);
 //    imshow("dst_weight_map_ before feed", dst_weight_map_);
 //    Mat foreInput, imgU, maskU;
@@ -241,6 +253,7 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
 //    imshow("mask input", maskU);
 //    imshow("foreground input", foreInput);
 #endif
+    }
 
     // 3.当前图像的像素乘上对应权重加到输出图像上, 并记录每个pixel对应的总权重和
     for (int y = 0; y < img.rows; ++y) {
@@ -248,7 +261,7 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
         Point3_<short>* dst_row = dst.ptr<Point3_<short>>(dy + y);
         const float* weight_row = weight_map.ptr<float>(y);
         float* dst_weight_row = dst_weight_map.ptr<float>(dy + y);
-        assert(src_row != nullptr && dst_row != nullptr && weight_row != nullptr && dst_weight_row != nullptr);
+        assert(src_row && dst_row && weight_row && dst_weight_row);
 
         for (int x = 0; x < img.cols; ++x) {
             if (enable_cover_) {
@@ -274,23 +287,25 @@ void cvFeatherBlender::feed(InputArray _img, InputArray mask, Point tl)
         }
     }
 
-
-#if ENABLE_DEBUG_RESULT_FEATHER_FEED1 && ENABLE_DEBUG_RESULT
+    {
+#if DEBUG && ENABLE_DEBUG_FEATHER_FEED
 //    imshow("tatal edge", overlapped_edges_mask_);
 
 //    vector<vector<Point>> contours;
 //    findContours(overlapped, contours, RETR_LIST, CHAIN_APPROX_SIMPLE);
 
-    dst.convertTo(disU, CV_8U);
+//    dst.convertTo(disU, CV_8U);
 //    drawContours(disU, contours, -1, Scalar(0, 255, 0), 2);
-    namedLargeWindow("dst after feed & overlapped area(green)", largeWin);
-    namedLargeWindow("dst_weight_map_ after feed", largeWin);
-    imshow("dst after feed & overlapped area(green)", disU);
-    imshow("dst_weight_map_ after feed", dst_weight_map_);
-    waitKey(0);
+//    NamedLargeWindow("dst after feed & overlapped area(green)", largeWin);
+//    NamedLargeWindow("dst_weight_map_ after feed", largeWin);
+//    imshow("dst after feed & overlapped area(green)", disU);
+//    imshow("dst_weight_map_ after feed", dst_weight_map_);
+//    waitKey(0);
 #endif
+    }
 }
 
+/*
 void cvFeatherBlender::feed(const vector<Mat>& vImgs, const vector<Mat>& vMasks, const vector<Point>& vTopleftCorners)
 {
 #define ENABLE_DEBUG_RESULT_FEATHER_FEED2 0
@@ -364,26 +379,31 @@ void cvFeatherBlender::feed(const vector<Mat>& vImgs, const vector<Mat>& vMasks,
 #endif
     }
 }
+*/
 
 void cvFeatherBlender::blend(InputOutputArray dst, InputOutputArray dst_mask)
 {
-#define ENABLE_DEBUG_RESULT_FEATHER_BLEND 0
+#define ENABLE_DEBUG_FEATHER_BLEND 0
 
-#if ENABLE_DEBUG_RESULT_FEATHER_BLEND && ENABLE_DEBUG_RESULT
-    Mat tmp;
-    dst_.convertTo(tmp, CV_8U, 255);
-    imshow("before blending dst_weight_map_", dst_weight_map_);
-    imshow("before blending dst_", tmp);
+    {
+#if ENABLE_DEBUG_FEATHER_BLEND && DEBUG
+        Mat tmp;
+        dst_.convertTo(tmp, CV_8U, 255);
+        imshow("before blending dst_weight_map_", dst_weight_map_);
+        imshow("before blending dst_", tmp);
 #endif
+    }
 
     normalizeUsingWeightMap(dst_weight_map_, dst_);
 
-#if ENABLE_DEBUG_RESULT_FEATHER_BLEND && ENABLE_DEBUG_RESULT
-    dst_.convertTo(tmp, CV_8U, 255);
-    imshow("after blending dst_weight_map_", dst_weight_map_);
-    imshow("after blending dst_", tmp);
-    waitKey(0);
+    {
+#if ENABLE_DEBUG_FEATHER_BLEND && DEBUG
+        dst_.convertTo(tmp, CV_8U, 255);
+        imshow("after blending dst_weight_map_", dst_weight_map_);
+        imshow("after blending dst_", tmp);
+        waitKey(0);
 #endif
+    }
 
     if (enable_cover_)
         dst_weight_map_.convertTo(dst_mask_, CV_8U, 255);
@@ -392,16 +412,32 @@ void cvFeatherBlender::blend(InputOutputArray dst, InputOutputArray dst_mask)
     cvBlender::blend(dst, dst_mask);
 }
 
+void cvFeatherBlender::getMiddleResult(InputOutputArray dst, InputOutputArray dst_mask)
+{
+    UMat dst_tmp = dst_.clone();
+    normalizeUsingWeightMap(dst_weight_map_, dst_tmp);
+
+    UMat mask;
+    if (enable_cover_)
+        dst_weight_map_.convertTo(dst_mask, CV_8U, 255);
+    else
+        compare(dst_weight_map_, WEIGHT_EPS, dst_mask, CMP_GT);
+    compare(dst_mask, 0, mask, CMP_EQ);
+
+    dst_tmp.setTo(Scalar::all(0), mask);
+    dst.assign(dst_tmp);
+}
+
 /**
- * @brief overlappedEdgesSmoothing  重叠区域的边缘平滑, 主要是为了消除前景重叠区域边缘处的锯齿
+ * @brief 重叠区域的边缘平滑, 主要是为了消除前景重叠区域边缘处的锯齿
  * @param src   拼接后的前景图, 16SC3
  * @param mask  前景图中重叠区域的边缘掩模(降低计算量, 限制处理范围), 8UC1
  * @param dst   结果图
  * @param scale 下采样的尺度比例
  */
-void cvFeatherBlender::smoothEdgesOnOverlappedArea(const cv::Mat& src, const cv::Mat& mask, cv::Mat& dst, float scale)
+void cvFeatherBlender::smoothEdgesOnOverlappedArea(const Mat& src, const Mat& mask, Mat& dst, float scale)
 {
-#define ENABLE_DEBUG_RESULT_FEATHER_SMOOTH 1
+#define ENABLE_DEBUG_FEATHER_SMOOTH 0
 
     assert(scale > 0 && scale <= 1.);
     const double invScale = 1. / scale;
@@ -435,9 +471,10 @@ void cvFeatherBlender::smoothEdgesOnOverlappedArea(const cv::Mat& src, const cv:
     for (int i = 0; i < 4; ++i)
         filter2D(srcGrayScaled, vEdges_F[i], CV_32FC1, vKernels[i], Point(-1, -1), 0, BORDER_REPLICATE);
 
-//#if ENABLE_DEBUG_RESULT && ENABLE_DEBUG_RESULT_FEATHER_SMOOTH
-//    Mat g12 = (cv::abs(vEdges_F[0]) + cv::abs(vEdges_F[1])) * 0.5;
-//    Mat g34 = (cv::abs(vEdges_F[2]) + cv::abs(vEdges_F[3])) * 0.5;
+    {
+#if DEBUG && ENABLE_DEBUG_FEATHER_SMOOTH
+//    Mat g12 = (abs(vEdges_F[0]) + abs(vEdges_F[1])) * 0.5;
+//    Mat g34 = (abs(vEdges_F[2]) + abs(vEdges_F[3])) * 0.5;
 //    normalize(g12, g12, 0.f, 1.f, NORM_MINMAX);
 //    g12.convertTo(g12, CV_8UC1, 255);
 //    normalize(g34, g34, 0.f, 1.f, NORM_MINMAX);
@@ -446,12 +483,13 @@ void cvFeatherBlender::smoothEdgesOnOverlappedArea(const cv::Mat& src, const cv:
 //    bitwise_or(0, g34, g34, maskScaled);
 //    imwrite("/home/vance/output/ms/初始梯度方向1+2.png", g12);
 //    imwrite("/home/vance/output/ms/初始梯度方向3+4.png", g34);
-//#endif
+#endif
+    }
 
     // 2.对掩模对应的区域的梯度, 选出4个方向中的最大者并标记最大梯度方向
     Mat maxEdge_Full = Mat::zeros(srcGrayScaled.size(), CV_32FC1);
     Mat maxEdge_F = Mat::zeros(srcGrayScaled.size(), CV_32FC1);
-    Mat dstLabel = Mat::zeros(srcGrayScaled.size(), CV_8UC1);   // 掩模区内边缘的方向
+    Mat dstLabel = Mat::zeros(srcGrayScaled.size(), CV_8UC1);  // 掩模区内边缘的方向
     Mat distLabelColor = Mat::zeros(srcGrayScaled.size(), CV_8UC3);
     for (int y = 0; y < srcGrayScaled.rows; ++y) {
         const char* mask_row = maskScaled.ptr<char>(y);
@@ -462,18 +500,18 @@ void cvFeatherBlender::smoothEdgesOnOverlappedArea(const cv::Mat& src, const cv:
         float* tmp_row = maxEdge_Full.ptr<float>(y);
 
         for (int x = 0; x < srcGrayScaled.cols; ++x) {
-//            if (mask_row[x] != 0) {
-                int label = 0;  // 默认无梯度则黑色
-                float maxGradient = 0.f;
-                for (int i = 0; i < 4; ++i) {
-                    const float g = abs(vEdges_F[i].at<float>(y, x)); // 绝对值符号使正负方向为同一方向
-                    if (g > maxGradient) {
-                        maxGradient = g;
-                        label = i + 1;
-                    }
+            // if (mask_row[x] != 0) {
+            int label = 0;  // 默认无梯度则黑色
+            float maxGradient = 0.f;
+            for (int i = 0; i < 4; ++i) {
+                const float g = abs(vEdges_F[i].at<float>(y, x));  // 绝对值符号使正负方向为同一方向
+                if (g > maxGradient) {
+                    maxGradient = g;
+                    label = i + 1;
                 }
-                tmp_row[x] = maxGradient;
-                if (mask_row[x] != 0) {
+            }
+            tmp_row[x] = maxGradient;
+            if (mask_row[x] != 0) {
                 dst_row[x] = maxGradient;
                 label_row[x] = label;
                 distLabelColor_row[x] = vLableColor[label];
@@ -482,11 +520,12 @@ void cvFeatherBlender::smoothEdgesOnOverlappedArea(const cv::Mat& src, const cv:
     }
     Mat finalEdge, gap;
     maxEdge_F.convertTo(finalEdge, CV_8UC1);
-    normalize(finalEdge, finalEdge, 0, 255, NORM_MINMAX);  // 归一化
+    normalize(finalEdge, finalEdge, 0, 255, NORM_MINMAX);   // 归一化
     threshold(finalEdge, finalEdge, 10, 0, THRESH_TOZERO);  // 太小的梯度归0
-    threshold(finalEdge, gap, 150, 255, THRESH_OTSU);   // 白边区域
+    threshold(finalEdge, gap, 150, 255, THRESH_OTSU);       // 白边区域
 
-#if ENABLE_DEBUG_RESULT && ENABLE_DEBUG_RESULT_FEATHER_SMOOTH
+    {
+#if DEBUG && ENABLE_DEBUG_FEATHER_SMOOTH
     imwrite("/home/vance/output/ms/重叠区域最大梯度otsu.png", gap);
 
     Mat tmp1;
@@ -498,103 +537,103 @@ void cvFeatherBlender::smoothEdgesOnOverlappedArea(const cv::Mat& src, const cv:
     imwrite("/home/vance/output/ms/初始梯度最大值.png", tmp1);
     Mat toShow = src.clone();
 #endif
+    }
 
     //! 方法1, 直接去掉gap
     dst = gap;
-/*
-    // 3.应用边缘滤波
-    vector<Mat> srcChannels(3), dstChanels(3);
-    split(src, srcChannels);
-    dstChanels = srcChannels;
+    /*
+        // 3.应用边缘滤波
+        vector<Mat> srcChannels(3), dstChanels(3);
+        split(src, srcChannels);
+        dstChanels = srcChannels;
 
-    vector<Point> vPointsToSmooth;
-    vector<int> vDirsToSmooth;
-    vPointsToSmooth.reserve(10000);
-    vDirsToSmooth.reserve(10000);
+        vector<Point> vPointsToSmooth;
+        vector<int> vDirsToSmooth;
+        vPointsToSmooth.reserve(10000);
+        vDirsToSmooth.reserve(10000);
 
 
-    // 先在低尺度上滤波一次, 然后上采样回原尺度加权融合
-    vector<Mat> vDstScaledFilterd(3), vDstScaled(3);
-    resize(dstChanels[0], vDstScaled[0], Size(), scale, scale);
-    resize(dstChanels[1], vDstScaled[1], Size(), scale, scale);
-    resize(dstChanels[2], vDstScaled[2], Size(), scale, scale);
-    for (int i = 0; i < 3; ++i)
-        applyEdgeFilter(vDstScaled[i], finalEdge, dstLabel, vDstScaledFilterd[i]);
+        // 先在低尺度上滤波一次, 然后上采样回原尺度加权融合
+        vector<Mat> vDstScaledFilterd(3), vDstScaled(3);
+        resize(dstChanels[0], vDstScaled[0], Size(), scale, scale);
+        resize(dstChanels[1], vDstScaled[1], Size(), scale, scale);
+        resize(dstChanels[2], vDstScaled[2], Size(), scale, scale);
+        for (int i = 0; i < 3; ++i)
+            applyEdgeFilter(vDstScaled[i], finalEdge, dstLabel, vDstScaledFilterd[i]);
 
-    Mat dstScaledFilterd, dstFilterdOnce;
-    merge(vDstScaledFilterd, dstScaledFilterd);
-    resize(dstScaledFilterd, dstFilterdOnce, src.size());
+        Mat dstScaledFilterd, dstFilterdOnce;
+        merge(vDstScaledFilterd, dstScaledFilterd);
+        resize(dstScaledFilterd, dstFilterdOnce, src.size());
 
-    imwrite("/home/vance/output/ms/前景(scaled).png", srcScaled);
-    imwrite("/home/vance/output/ms/前景(scaled)低尺度滤波.png", dstScaledFilterd);
-    imwrite("/home/vance/output/ms/前景低尺度滤波.png", dstFilterdOnce);
+        imwrite("/home/vance/output/ms/前景(scaled).png", srcScaled);
+        imwrite("/home/vance/output/ms/前景(scaled)低尺度滤波.png", dstScaledFilterd);
+        imwrite("/home/vance/output/ms/前景低尺度滤波.png", dstFilterdOnce);
 
-    dst = src.clone();
-    dst.setTo(0, mask);
+        dst = src.clone();
+        dst.setTo(0, mask);
 
-    bitwise_or(dst, dstFilterdOnce, dst, mask);
-    imwrite("/home/vance/output/ms/前景低尺度滤波应用到原尺度.png", dst);
-    split(dst, dstChanels);
+        bitwise_or(dst, dstFilterdOnce, dst, mask);
+        imwrite("/home/vance/output/ms/前景低尺度滤波应用到原尺度.png", dst);
+        split(dst, dstChanels);
 
-    // 再到原尺度上滤波
-    for (int y = 0; y < src.rows; ++y) {
-        const int y_scaled = cvRound(y * scale);
-        if (y_scaled >= dstLabel.rows)
-            continue;
-
-        const uchar* edge_row = finalEdge.ptr<uchar>(y_scaled);
-        const uchar* label_row = dstLabel.ptr<uchar>(y_scaled);
-        for (int x = 0; x < src.cols; ++x) {
-            const int x_scaled = cvRound(x * scale);
-            if (x_scaled >= dstLabel.cols)
+        // 再到原尺度上滤波
+        for (int y = 0; y < src.rows; ++y) {
+            const int y_scaled = cvRound(y * scale);
+            if (y_scaled >= dstLabel.rows)
                 continue;
 
-            if (label_row[x_scaled] > 0 && edge_row[x_scaled] > 10) {
-                applyEdgeFilter(dstChanels[0], x, y, label_row[x_scaled]);
-                applyEdgeFilter(dstChanels[1], x, y, label_row[x_scaled]);
-                applyEdgeFilter(dstChanels[2], x, y, label_row[x_scaled]);
-//                vPointsToSmooth.push_back(Point(x, y));
-//                vDirsToSmooth.push_back(label_row[x_scaled]);
-                toShow.at<Vec3b>(y, x) = Vec3b(0,255,0);
+            const uchar* edge_row = finalEdge.ptr<uchar>(y_scaled);
+            const uchar* label_row = dstLabel.ptr<uchar>(y_scaled);
+            for (int x = 0; x < src.cols; ++x) {
+                const int x_scaled = cvRound(x * scale);
+                if (x_scaled >= dstLabel.cols)
+                    continue;
+
+                if (label_row[x_scaled] > 0 && edge_row[x_scaled] > 10) {
+                    applyEdgeFilter(dstChanels[0], x, y, label_row[x_scaled]);
+                    applyEdgeFilter(dstChanels[1], x, y, label_row[x_scaled]);
+                    applyEdgeFilter(dstChanels[2], x, y, label_row[x_scaled]);
+    //                vPointsToSmooth.push_back(Point(x, y));
+    //                vDirsToSmooth.push_back(label_row[x_scaled]);
+                    toShow.at<Vec3b>(y, x) = Vec3b(0,255,0);
+                }
             }
         }
-    }
 
-//    applyEdgeFilter(srcChannels[0], dstChanels[0], vPointsToSmooth, vDirsToSmooth);
-//    applyEdgeFilter(srcChannels[1], dstChanels[1], vPointsToSmooth, vDirsToSmooth);
-//    applyEdgeFilter(srcChannels[2], dstChanels[2], vPointsToSmooth, vDirsToSmooth);
-    merge(dstChanels, dst);
+    //    applyEdgeFilter(srcChannels[0], dstChanels[0], vPointsToSmooth, vDirsToSmooth);
+    //    applyEdgeFilter(srcChannels[1], dstChanels[1], vPointsToSmooth, vDirsToSmooth);
+    //    applyEdgeFilter(srcChannels[2], dstChanels[2], vPointsToSmooth, vDirsToSmooth);
+        merge(dstChanels, dst);
 
-#if ENABLE_DEBUG_RESULT && ENABLE_DEBUG_RESULT_FEATHER_SMOOTH
-    Mat input = src.clone(), output = dst.clone();
-    vector<vector<Point>> contours;
-    findContours(mask, contours, RETR_LIST, CHAIN_APPROX_SIMPLE);
-    drawContours(input, contours, -1, Scalar(0, 255, 0), 1);
-    drawContours(output, contours, -1, Scalar(0, 255, 0), 1);
-    //    namedLargeWindow("points to smooth", 1);
-    namedLargeWindow("src", 1);
-    namedLargeWindow("dst", 1);
-    //    imshow("src", input);
-    //    imshow("dst", dst);
-    imwrite("/home/vance/output/ms/输入前景和边缘掩模.png", input);
-    imwrite("/home/vance/output/ms/输出图像和边缘掩模.png", output);
-    imwrite("/home/vance/output/ms/被处理的区域.png", toShow);
-    //    imshow("points to smooth", toShow);
-    waitKey(10);
-    destroyAllWindows();
-#endif
-*/
+    #if ENABLE_DEBUG_RESULT && ENABLE_DEBUG_FEATHER_SMOOTH
+        Mat input = src.clone(), output = dst.clone();
+        vector<vector<Point>> contours;
+        findContours(mask, contours, RETR_LIST, CHAIN_APPROX_SIMPLE);
+        drawContours(input, contours, -1, Scalar(0, 255, 0), 1);
+        drawContours(output, contours, -1, Scalar(0, 255, 0), 1);
+        //    NamedLargeWindow("points to smooth", 1);
+        NamedLargeWindow("src", 1);
+        NamedLargeWindow("dst", 1);
+        //    imshow("src", input);
+        //    imshow("dst", dst);
+        imwrite("/home/vance/output/ms/输入前景和边缘掩模.png", input);
+        imwrite("/home/vance/output/ms/输出图像和边缘掩模.png", output);
+        imwrite("/home/vance/output/ms/被处理的区域.png", toShow);
+        //    imshow("points to smooth", toShow);
+        waitKey(10);
+        destroyAllWindows();
+    #endif
+    */
 }
 
-
-Rect cvFeatherBlender::createWeightMaps(const std::vector<UMat>& masks,
-                                        const std::vector<Point>& corners, std::vector<UMat>& weight_maps)
+Rect cvFeatherBlender::createWeightMaps(const vector<UMat>& masks, const vector<Point>& corners,
+                                        vector<UMat>& weight_maps)
 {
     weight_maps.resize(masks.size());
     for (size_t i = 0; i < masks.size(); ++i)
         createWeightMap(masks[i], sharpness_, weight_maps[i]);
 
-    Rect dst_roi = resultRoi(corners, masks);
+    Rect dst_roi = ResultRoi(corners, masks);
     Mat weights_sum(dst_roi.size(), CV_32F);
     weights_sum.setTo(0);
 
@@ -608,18 +647,19 @@ Rect cvFeatherBlender::createWeightMaps(const std::vector<UMat>& masks,
         Rect roi(corners[i].x - dst_roi.x, corners[i].y - dst_roi.y, weight_maps[i].cols,
                  weight_maps[i].rows);
         Mat tmp = weights_sum(roi);
-        tmp.setTo(1, tmp < std::numeric_limits<float>::epsilon());
+        tmp.setTo(1, tmp < numeric_limits<float>::epsilon());
         divide(weight_maps[i], tmp, weight_maps[i]);
     }
 
     return dst_roi;
 }
 
-
+//////////////////////////////////////////////////////////////////////////////
+///
 cvMultiBandBlender::cvMultiBandBlender(int try_gpu, int num_bands, int weight_type)
 {
     num_bands_ = 0;
-    setNumBands(num_bands);
+    setNumBands(num_bands); // 设置实际金字塔层数
 
     CV_UNUSED(try_gpu);
     can_use_gpu_ = false;
@@ -634,8 +674,8 @@ void cvMultiBandBlender::prepare(Rect dst_roi)
     dst_roi_final_ = dst_roi;
 
     // Crop unnecessary bands
-    double max_len = static_cast<double>(std::max(dst_roi.width, dst_roi.height));
-    num_bands_ = std::min(actual_num_bands_, static_cast<int>(ceil(std::log(max_len) / std::log(2.0))));
+    double max_len = static_cast<double>(max(dst_roi.width, dst_roi.height));
+    num_bands_ = min(actual_num_bands_, static_cast<int>(ceil(log(max_len) / log(2.0))));
 
     // Add border to the final image, to ensure sizes are divided by (1 << num_bands_)
     // 尺寸凑到层数的偶数倍, 以便金字塔缩放. 但最终的输出图像尺寸是由初始输入参数决定的.
@@ -662,7 +702,6 @@ void cvMultiBandBlender::prepare(Rect dst_roi)
     }
 }
 
-
 void cvMultiBandBlender::feed(InputArray _img, InputArray mask, Point tl)
 {
     UMat img = _img.getUMat();
@@ -672,9 +711,8 @@ void cvMultiBandBlender::feed(InputArray _img, InputArray mask, Point tl)
     // Keep source image in memory with small border
     // 给输入图像添加一个gap大小的边界, 但不超过dis_roi的范围.
     int gap = 3 * (1 << num_bands_);
-    Point tl_new(std::max(dst_roi_.x, tl.x - gap), std::max(dst_roi_.y, tl.y - gap));
-    Point br_new(std::min(dst_roi_.br().x, tl.x + img.cols + gap),
-                 std::min(dst_roi_.br().y, tl.y + img.rows + gap));
+    Point tl_new(max(dst_roi_.x, tl.x - gap), max(dst_roi_.y, tl.y - gap));
+    Point br_new(min(dst_roi_.br().x, tl.x + img.cols + gap), min(dst_roi_.br().y, tl.y + img.rows + gap));
 
     // Ensure coordinates of top-left, bottom-right corners are divided by (1 << num_bands_).
     // After that scale between layers is exactly 2.
@@ -691,8 +729,8 @@ void cvMultiBandBlender::feed(InputArray _img, InputArray mask, Point tl)
     height += ((1 << num_bands_) - height % (1 << num_bands_)) % (1 << num_bands_);
     br_new.x = tl_new.x + width;
     br_new.y = tl_new.y + height;
-    int dy = std::max(br_new.y - dst_roi_.br().y, 0);
-    int dx = std::max(br_new.x - dst_roi_.br().x, 0);
+    int dy = max(br_new.y - dst_roi_.br().y, 0);
+    int dx = max(br_new.x - dst_roi_.br().x, 0);
     tl_new.x -= dx;
     br_new.x -= dx;
     tl_new.y -= dy;
@@ -707,12 +745,12 @@ void cvMultiBandBlender::feed(InputArray _img, InputArray mask, Point tl)
     UMat img_with_border;
     copyMakeBorder(_img, img_with_border, top, bottom, left, right, BORDER_REFLECT);  // 生成添加了边界的图像
 
-    std::vector<UMat> src_pyr_laplace;
+    vector<UMat> src_pyr_laplace;
     createLaplacePyr(img_with_border, num_bands_, src_pyr_laplace);
 
     // Create the weight map Gaussian pyramid. 掩模也要添加相同的边界,并生成金字塔掩模
     UMat weight_map;
-    std::vector<UMat> weight_pyr_gauss(num_bands_ + 1);
+    vector<UMat> weight_pyr_gauss(num_bands_ + 1);
 
     if (weight_type_ == CV_32F) {
         mask.getUMat().convertTo(weight_map, CV_32F, 1. / 255.);
@@ -780,12 +818,11 @@ void cvMultiBandBlender::feed(InputArray _img, InputArray mask, Point tl)
     }
 }
 
-
 void cvMultiBandBlender::blend(InputOutputArray dst, InputOutputArray dst_mask)
 {
     Rect dst_rc(0, 0, dst_roi_final_.width, dst_roi_final_.height);
     {
-        cv::UMat dst_band_weights_0;
+        UMat dst_band_weights_0;
 
         for (int i = 0; i <= num_bands_; ++i)
             normalizeUsingWeightMap(dst_band_weights_[i], dst_pyr_laplace_[i]);
@@ -804,12 +841,36 @@ void cvMultiBandBlender::blend(InputOutputArray dst, InputOutputArray dst_mask)
     }
 }
 
+void cvMultiBandBlender::getMiddleResult(InputOutputArray dst, InputOutputArray dst_mask)
+{
+    Rect dst_rc(0, 0, dst_roi_final_.width, dst_roi_final_.height);
+
+    cv::UMat dst_band_weights_0;
+
+    std::vector<UMat> dst_pyr_laplace_tmp = dst_pyr_laplace_;
+    for (int i = 0; i <= num_bands_; ++i)
+        normalizeUsingWeightMap(dst_band_weights_[i], dst_pyr_laplace_tmp[i]);
+
+    restoreImageFromLaplacePyr(dst_pyr_laplace_tmp);
+
+    UMat dst_tmp = dst_pyr_laplace_tmp[0](dst_rc);
+    dst_band_weights_0 = dst_band_weights_[0];
+
+    compare(dst_band_weights_0(dst_rc), WEIGHT_EPS, dst_mask, CMP_GT);
+
+    UMat mask;
+    compare(dst_mask, 0, mask, CMP_EQ);
+    dst_tmp.setTo(Scalar::all(0), mask);
+
+    dst.assign(dst_tmp);
+}
+
 
 //////////////////////////////////////////////////////////////////////////////
 // Auxiliary functions
 
 /**
- * @brief normalizeUsingWeightMap   输出图像归一化, 除去总权重
+ * @brief 输出图像归一化, 除去总权重
  * @param _weight   输出图像mask中每个像素的总权值, 即 dst_weight_map_
  * @param _src      输出图像, src += weight * input
  */
@@ -847,42 +908,18 @@ void normalizeUsingWeightMap(InputArray _weight, InputOutputArray _src)
     }
 }
 
-
 void createWeightMap(InputArray mask, float sharpness, InputOutputArray weight)
 {
     assert(mask.type() == CV_8U);
 
     distanceTransform(mask, weight, DIST_L1, 3);  // CV_32F
 
-    //#if ENABLE_DEBUG_RESULT
-    //    Mat w, wu;
-
-    //    //cout << "weight type:" << weight.getMat().type() << endl;
-    //    weight.getMat().convertTo(wu, CV_8UC1, 255);
-    //    hconcat(mask, wu, w);
-    //    imshow("mask & weight", w);
-    //#endif
-
     UMat tmp;
     multiply(weight, sharpness, tmp);
     threshold(tmp, weight, 1.f, 1.f, THRESH_TRUNC);
-
-    //#if ENABLE_DEBUG_RESULT
-    //    //cout << "tmp type:" << tmp.type() << endl;
-    //    //cout << "weight type:" << weight.type() << endl;
-
-    //    Mat tmp1, tmp2;
-
-    //    normalize(weight, tmp1, 0, 255, NORM_MINMAX);
-    //    Mat w2;
-    //    hconcat(tmp, tmp1, w2);
-    //    imshow("weight * sharpness & threshold weight", w2) ;
-    //    waitKey(0);
-    //#endif
 }
 
-
-void createLaplacePyr(InputArray img, int num_levels, std::vector<UMat>& pyr)
+void createLaplacePyr(InputArray img, int num_levels, vector<UMat>& pyr)
 {
     pyr.resize(num_levels + 1);
 
@@ -927,17 +964,7 @@ void createLaplacePyr(InputArray img, int num_levels, std::vector<UMat>& pyr)
     }
 }
 
-
-void createLaplacePyrGpu(InputArray img, int num_levels, std::vector<UMat>& pyr)
-{
-    CV_UNUSED(img);
-    CV_UNUSED(num_levels);
-    CV_UNUSED(pyr);
-    CV_Error(Error::StsNotImplemented, "CUDA optimization is unavailable");
-}
-
-
-void restoreImageFromLaplacePyr(std::vector<UMat>& pyr)
+void restoreImageFromLaplacePyr(vector<UMat>& pyr)
 {
     if (pyr.empty())
         return;
@@ -948,11 +975,5 @@ void restoreImageFromLaplacePyr(std::vector<UMat>& pyr)
     }
 }
 
-
-void restoreImageFromLaplacePyrGpu(std::vector<UMat>& pyr)
-{
-    CV_UNUSED(pyr);
-    CV_Error(Error::StsNotImplemented, "CUDA optimization is unavailable");
-}
 
 }  // namespace ms

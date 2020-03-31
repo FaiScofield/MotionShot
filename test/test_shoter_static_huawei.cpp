@@ -1,4 +1,4 @@
-#include "MotionShoter/utility.h"
+#include "utility.h"
 #include <iostream>
 #include <map>
 #include <opencv2/core/core.hpp>
@@ -196,8 +196,8 @@ int main(int argc, char* argv[])
         ReadImageSequence(str_folder + "/../gt_full", "jpg", vGTsColor, beginIdx, endIdx - beginIdx + 1);
         colorMask2Gray(vGTsColor, vGTsGray);
 #endif
-        resizeFlipRotateImages(vImages, scale);
-        resizeFlipRotateImages(vGTsGray, scale);
+        ResizeFlipRotateImages(vImages, scale);
+        ResizeFlipRotateImages(vGTsGray, scale);
 
         if (vImages.empty() || vGTsGray.empty())
             exit(-1);
@@ -225,7 +225,7 @@ int main(int argc, char* argv[])
         morphologyEx(mask, mask, MORPH_CLOSE, kernel2, Point(-1,-1), 1); // 去孔洞
         morphologyEx(mask, mask, MORPH_OPEN, kernel3, Point(-1,-1), 1);  // 平滑边界
 #if GET_GROUNDTRUTH_FROM_BAIDU
-        smoothMaskWeightEdge(mask, mask, 5, 0);
+        SmoothMaskWeightEdge(mask, mask, 5, 0);
 #elif GET_GROUNDTRUTH_FROM_FACEPP
 //        morphologyEx(mask, mask, MORPH_DILATE, kernel1, Point(-1,-1), 1);
 //        mask.setTo(255, mask);
@@ -307,7 +307,7 @@ int main(int argc, char* argv[])
     Mat overlappedEdgesMask = blender->getOverlappedEdgesMask(3);
     bitwise_and(overlappedEdgesMask, allForegroundMask, overlappedEdgesMask);// 扣掉前景轮廓外那部分的待平滑区域
     Mat foregroundFiltered, foregroundFiltered_S;
-    overlappedEdgesSmoothing(allForeground, overlappedEdgesMask, foregroundFiltered, 0.25);
+    OverlappedEdgesSmoothing(allForeground, overlappedEdgesMask, foregroundFiltered, 0.25);
     foregroundFiltered.convertTo(foregroundFiltered_S, CV_16SC3);
 
     timer.stop();
@@ -328,7 +328,7 @@ int main(int argc, char* argv[])
     blender3->prepare(disRoi);
 
     Mat foregroundMaskFinal, backgroundMaskFinal, maskFinal;
-    smoothMaskWeightEdge(allForegroundMask, foregroundMaskFinal, 0);  // 过渡边缘
+    SmoothMaskWeightEdge(allForegroundMask, foregroundMaskFinal, 0);  // 过渡边缘
     bitwise_not(foregroundMaskFinal, backgroundMaskFinal);
 
     Mat pano_S, result1, resultMask1, result2, resultMask2;

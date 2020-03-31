@@ -6,7 +6,7 @@
 
 #include "MotionDetector/BS_MOG2_CV.h"
 #include "MotionDetector/FramesDifference.h"
-#include "MotionShoter/utility.h"
+#include "utility.h"
 
 #include <iostream>
 #include <opencv2/highgui/highgui.hpp>
@@ -86,7 +86,7 @@ int main(int argc, char* argv[])
         return -1;
     }
     INFO(" - Image size input = " << vImages[0].size());
-    resizeFlipRotateImages(vImages, scale);
+    ResizeFlipRotateImages(vImages, scale);
 
     BaseMotionDetector* detector;
     if (str_detector == "fd") {
