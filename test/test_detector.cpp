@@ -129,8 +129,8 @@ int main(int argc, char* argv[])
 
         for(int x = 0; x < vImages[0].cols; ++x) {
             vector<pair<uchar, uchar>> vLumarAndIndex;
-            for (size_t i = 0; i < N; ++i)
-                vLumarAndIndex.emplace_back(vImgs_Y[i].at<uchar>(y, x), i);
+            for (size_t imgIdx = 0; imgIdx < N; ++imgIdx)
+                vLumarAndIndex.emplace_back(vImgs_Y[imgIdx].at<uchar>(y, x), imgIdx);
 
             sort(vLumarAndIndex.begin(), vLumarAndIndex.end()); // 根据亮度中值决定此像素的值由哪张图像提供
             uchar idx = vLumarAndIndex[N/2].second;

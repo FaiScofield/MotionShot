@@ -44,6 +44,12 @@ public:
 
     static Ptr<ImageStitcher> create(FeatureType ft = SURF, FeatureMatchType mt = KNN);
 
+    void setFeatureType(int ft) { featureType_ = (FeatureType)ft; }
+    void setFeatureMatchMethod(int fmm) { featureMatchType_ = (FeatureMatchType)fmm; }
+    void setBundleAjustment(bool flag) { doBundleAjustment_ = flag; }
+    void setWaveCorrection(bool flag) { doWaveCorrection_ = flag; }
+    void setSeamOptimization(bool flag) { doSeamOptimization_ = flag; }
+
     void setRistResolutions(double r1, double r2, double r3 = 0);
     void setScales(double s1 = 0.5, double s2 = 0.25, double s3 = 1.);
 
@@ -57,7 +63,8 @@ public:
 
     //! 用法2, (变换+前景检测(outside)+合成), 先输出变换结果, 由外部检测前景, 再传入相关数据进行合成
     void setForegrounds(const vector<Rect>& fores) { foregroundRects_ = fores; }
-    Status getWarpedImages(OutputArray imgs, OutputArray masks, vector<Point>& corners);  //! TODO
+    Status getWarpedImages(OutputArrayOfArrays imgs, OutputArrayOfArrays masks,
+                           vector<Point>& corners, double scale = 0.5);
     Status composePanoramaWithForegrounds(OutputArray pano); //! TODO
 
     // WarpedCorners getWarpedCorners(const Mat& src, const Mat& H);
@@ -66,6 +73,9 @@ public:
 
     //! debug functions
     Status computeHomography(InputArray img1, InputArray img2, OutputArray H12);
+
+    MS_DEBUG_TO_DELETE bool drawSeamOnOutput_;
+    MS_DEBUG_TO_DELETE vector<vector<vector<Point>>> contours_;
 
 public:
     void getBaseFrame(){}    //! TODO
@@ -106,13 +116,13 @@ public:
     vector<Size> inputImgSize_/*, warpedImgSize_*/;
 
     size_t numImgs_, baseIndex_;     // 基准帧索引
-    UMat baseFrame_, matchingMask_;  // 基准帧, 与基准帧匹配的指导掩模 NxN
+    UMat /*baseFrame_,*/ matchingMask_;  // 基准帧, 与基准帧匹配的指导掩模 NxN
     vector<size_t> indices_;
 
     vector<cv::detail::ImageFeatures> features_;        // 特征
     vector<cv::detail::MatchesInfo> pairwise_matches_;  // 匹配关系
     vector<cv::detail::CameraParams> cameras_;          // 相机参数
-    Mat result_mask_;
+    //Mat result_mask_;
 
     vector<Rect> foregroundRects_;
 };

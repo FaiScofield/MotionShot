@@ -1053,6 +1053,26 @@ void OverlappedEdgesSmoothing(const Mat& src, const Mat& mask, Mat& dst, double 
 #endif
 }
 
+
+Rect ResizeRectangle(const Rect& rec, const Size& size, int a, int b)
+{
+    Rect res = rec;
+
+    res.x += a;
+    res.x = std::min(std::max(res.x, 0), size.width);
+
+    res.y += a;
+    res.y = std::min(std::max(res.y, 0), size.height);
+
+    res.width += b - a;
+    res.width = res.br().x >= size.width ? size.width - res.x : res.width;
+
+    res.height += b - a;
+    res.height = res.br().y >= size.height ? size.height - res.y : res.height;
+
+    return res;
+}
+
 #if DEBUG
 void NamedLargeWindow(const string& title, bool flag)
 {

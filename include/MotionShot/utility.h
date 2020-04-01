@@ -56,6 +56,7 @@ Mat GuidedFilter(const Mat& src, int radius, double eps);
 // void applyEdgeFilter(Mat& img, int x, int y, int dir);
 void OverlappedEdgesSmoothing(const Mat& src, const Mat& mask, Mat& dst, double scale = 0.5);
 
+Rect ResizeRectangle(const Rect& rec, const Size& size, int a, int b);
 
 #ifdef DEBUG
 void NamedLargeWindow(const string& title, bool flag = true);

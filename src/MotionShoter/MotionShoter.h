@@ -9,7 +9,8 @@
 #include <map>
 #include <memory>
 
-#include <opencv2/video/video.hpp>
+#include <opencv2/video.hpp>
+#include <opencv2/bgsegm.hpp>
 
 namespace ms
 {
@@ -29,31 +30,29 @@ public:
 
     MotionShot();
 
-    inline Mat getBaseFrame() const { return baseFrame_.clone(); }
-    inline vector<Mat> getForeground() const { return foregrounds_; }
-
+    UMat getBaseFrame() const { return baseFrame_.clone(); }
+    vector<Mat> getForeground() const { return foregrounds_; }
+    void setStitcher(Ptr<ImageStitcher> stitcher) { stitcher_ = stitcher; }
+    void setBlender(Ptr<cvBlender> blender) { blender_ = blender; }
 
     Status setInputs(InputArrayOfArrays imgs, InputArrayOfArrays masks = cv::noArray());
-
     Status run();
+    void getResult(OutputArray pano) { pano.assign(pano_); }
 
-    Status estimateTransform();
-
-    Status warpImages();
-
+    Status getWarpedImagsFromStitcher(double scale);
+    Status makeBorderForWarpedImages();
     Status detectorForeground();
-
     Status compose();
 
+    Status detectorForegroundWithNN(InputArray src, OutputArray dst);
 
-    void detectorForegroundWithNN(InputArray src, InputArray mask, OutputArray dst);
+    Rect getLargestInscribedRectangle(InputArray mask);
 
 private:
     void prepare(const vector<Point>& corners, const vector<Size>& sizes);
     void prepare(Rect dst_roi);
-    void makeBorderForWarpedImages();
 
-    void foreMaskFilter(InputArray src, OutputArray dst); //! TODO
+    void foreMaskFilter(InputArray src, OutputArray dst, Rect& foreRect);
 
     int checkOverlappedArea(const vector<Rect>&); //! TODO
     Status composeWithOverlapped();
@@ -66,25 +65,25 @@ private:
     // custom class
     Ptr<ImageStitcher> stitcher_;
     Ptr<cvBlender> blender_;
-    Ptr<cv::BackgroundSubtractorMOG2> detector_;
+    Ptr<cv::BackgroundSubtractor> detector_;
 
     // images
-    vector<Mat> inputImages_, inputMasks_;
+    vector<UMat> inputImages_, inputMasks_;
 //    vector<Mat> scaledImages_, scaledMasks_;
-    vector<Mat> warpedImages_, warpedMasks_;
+    vector<UMat> warpedImages_, warpedMasks_;
     vector<Point> corners_/*, scaledCorners_*/;
     vector<Size> inputSizes_, warpedSize_, scaledSize_/*, scaledWarpedSize_*/;
 
     vector<Mat> foregrounds_, foregroundMasks_;
     vector<Mat> homograpies_;
-    vector<Rect> foregroundRects_;
+    vector<Rect> foregroundRectsRough_, foregroundRectsRefine_;
 
-    Mat baseFrame_, baseFrameMask_, pano_;
+    UMat baseFrame_, baseFrameMask_, pano_;
 
     size_t numImgs_, bfi_;  // base frame index
     vector<size_t> indices_;
 
-    Mat dstImg_, dstMask_;
+    UMat dstImg_, dstMask_;
     Rect dstROI_;
 };
 

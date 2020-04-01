@@ -1,11 +1,9 @@
 #include "utility.h"
-#include "ImageStitcher/ImageStitcher.h"
-#include <opencv2/stitching.hpp>
+#include "MotionShoter/MotionShoter.h"
 
 using namespace ms;
 using namespace std;
 using namespace cv;
-namespace cvd = cv::detail;
 
 const int delta = 3;
 
@@ -52,64 +50,43 @@ int main(int argc, char* argv[])
         return -1;
     }
     INFO(" - num of input images = " << vImages.size());
+    INFO(" - resolution of images  = " << vImages[0].size());
     if (num < 2) {
         ERROR("Too less images input!");
         exit(-1);
     }
 
-    /// start stitching
-    INFO(endl << "\t Stitching... This will take a while...");
+    /// mainloop
+    INFO(endl << "\t Shoting... This will take a while...");
 
     TickMeter timer;
     timer.start();
 
-    /// 1. opencv stitcher
-    Ptr<cv::Stitcher> stitcher1 = cv::Stitcher::create(Stitcher::PANORAMA);
-    stitcher1->setWarper(makePtr<PlaneWarper>());
-    stitcher1->setWaveCorrection(false);
-//    stitcher1->setExposureCompensator(makePtr<cvd::NoExposureCompensator>());
-//    stitcher1->setSeamFinder(makePtr<cvd::NoSeamFinder>());
+    MotionShot::Status status = MotionShot::OK;
+    Ptr<MotionShot> motionShoter = makePtr<MotionShot>();
 
-    Mat pano1;
-    Stitcher::Status status = stitcher1->stitch(vImages, pano1);
-    if (status != Stitcher::OK) {
-        ERROR("Can't stitch images (cv), error code = " << status);
-        return -1;
+    status = motionShoter->setInputs(vImages);
+    if (status != MotionShot::OK) {
+        ERROR("Input data error! status code = " << status);
+        exit(-1);
+    }
+    status = motionShoter->run();
+    if (status != MotionShot::OK) {
+        ERROR("Runing error! status code = " << status);
+        exit(-1);
     }
 
     timer.stop();
-    TIMER(" - Time cost in stitching 1 = " << timer.getTimeSec() << "s");
-    INFO(" - Image size = " << vImages[0].size());
-    INFO(" - Pano size = " << pano1.size());
+    TIMER(" - Time cost in motion shot: " << timer.getTimeSec() << "s");
 
-    NamedLargeWindow("Result Pano CV");
-    imshow("Result Pano CV", pano1);
-    imwrite("/home/vance/output/result_pano_cv.jpg", pano1);
-    INFO("Saving result1 to /home/vance/output/result_pano_cv.jpg");
-    timer.start();
+//    Mat pano;
+//    motionShoter->getResult(pano);
 
-    /// 2. custom stitcher
-    Ptr<ImageStitcher> stitcher2 = ImageStitcher::create(ImageStitcher::ORB, ImageStitcher::BF);
-    stitcher2->setScales(0.25, 0.1, 1.);
-    stitcher2->setWaveCorrection(false);
-//    stitcher2->setRistResolutions(0.6, 0.1, 0);
-
-    Mat pano2;
-    ImageStitcher::Status status2 = stitcher2->stitch(vImages, pano2);
-    if (status2 != ImageStitcher::OK) {
-        ERROR("Can't stitch2 images (custom), error code = " << status);
-        return -1;
-    }
-
-    timer.stop();
-    TIMER(" - Time cost in stitching 2 = " << timer.getTimeSec() << "s");
-
-    NamedLargeWindow("Result Pano Custom");
-    imshow("Result Pano Custom", pano2);
-    imwrite("/home/vance/output/result_pano_custom.jpg", pano2);
-    INFO("Saving result2 to /home/vance/output/result_pano_custom.jpg");
-
-    waitKey(0);
+//    NamedLargeWindow("Result Pano");
+//    imshow("Result Pano", pano);
+//    imwrite("/home/vance/output/result_pano_shoter.jpg", pano);
+//    INFO("Saving result to /home/vance/output/result_pano_shoter.jpg");
+//    waitKey(0);
 
     return 0;
 }
