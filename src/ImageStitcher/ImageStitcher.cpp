@@ -48,7 +48,7 @@ ImageStitcher::ImageStitcher(FeatureType ft, FeatureMatchType mt)
     composeResol_ = 0;
     determinScaleByResol_ = false;  // determin resolution
 
-    registScale_ = 0.5;            // determin scale
+    registScale_ = 0.5;  // determin scale
     seamScale_ = 0.25;
     composeScale_ = 1.;
 
@@ -63,6 +63,7 @@ ImageStitcher::ImageStitcher(FeatureType ft, FeatureMatchType mt)
     doSeamlessBlending_ = true;
 
     drawSeamOnOutput_ = false;
+    emptyInputMask_ = true;
 
     if (doBundleAjustment_) {
         bundleAdjuster_ = makePtr<cv::detail::BundleAdjusterRay>();
@@ -71,6 +72,7 @@ ImageStitcher::ImageStitcher(FeatureType ft, FeatureMatchType mt)
         bundleAdjuster_ = makePtr<cv::detail::NoBundleAdjuster>();
 
     if (doExposureCompensation_ || doSeamOptimization_) {  //! TODO
+        //! NOTE 曝光补偿不能在原分辨率上做!!! 只能在低分辨率下做!!!
         exposureCompensator_ = makePtr<cv::detail::BlocksGainCompensator>();
         seamFinder_ = makePtr<cv::detail::GraphCutSeamFinder>(cv::detail::GraphCutSeamFinderBase::COST_COLOR);
     }
@@ -79,6 +81,22 @@ ImageStitcher::ImageStitcher(FeatureType ft, FeatureMatchType mt)
         blender_ = makePtr<ms::cvFeatherBlender>();
     else
         blender_ = ms::cvBlender::createDefault(ms::cvBlender::NO, false);
+}
+
+ImageStitcher::~ImageStitcher()
+{
+    features_.clear();
+    pairwise_matches_.clear();
+    cameras_.clear();
+
+    featureFinder_.release();
+    featureMatcher_.release();
+    motionEstimator_.release();
+    bundleAdjuster_.release();
+    exposureCompensator_.release();
+    seamFinder_.release();
+    warper_.release();
+    blender_.release();
 }
 
 Ptr<ImageStitcher> ImageStitcher::create(FeatureType ft, FeatureMatchType mt)
@@ -129,8 +147,13 @@ ImageStitcher::Status ImageStitcher::estimateTransform(InputArrayOfArrays images
     images.getUMatVector(inputImages_);
     masks.getUMatVector(inputMasks_);
     numImgs_ = inputImages_.size();
-    if (!inputMasks_.empty())
+
+    if (!inputMasks_.empty()) {
         assert(inputMasks_.size() == numImgs_);
+        emptyInputMask_ = false;
+    } else {
+        emptyInputMask_ = true;
+    }
 
     if (baseIndex_ == 0) {
         baseIndex_ = (numImgs_ - 1) / 2;
@@ -139,8 +162,34 @@ ImageStitcher::Status ImageStitcher::estimateTransform(InputArrayOfArrays images
         mask.row(baseIndex_).setTo(255);
         mask.col(baseIndex_).setTo(255);
         mask.at<uchar>(baseIndex_, baseIndex_) = 0;
-        INFO("base frame index is: " << baseIndex_ << ", and the matching mask is: " << endl << mask);
+        INFO("base frame index is: " << baseIndex_ << ", and the matching mask is: " << endl
+                                     << mask);
     }
+
+    // 确定一下缩放比例
+    if (determinScaleByResol_) {
+        double maxArea = 0;
+        for (size_t i = 0; i < numImgs_; ++i)
+            maxArea = inputImages_[i].size().area() > maxArea ? inputImages_[i].size().area() : maxArea;
+
+        if (registResol_ > 0)
+            registScale_ = std::min(1.0, std::sqrt(registResol_ * 1e6 / maxArea));
+        else
+            registScale_ = 1.;
+
+        if (seamScale_ > 0)
+            seamScale_ = std::min(1.0, std::sqrt(seamResol_ * 1e6 / maxArea));
+        else
+            seamScale_ = 1.;
+
+        if (composeResol_ > 0)
+            composeScale_ = std::min(1.0, std::sqrt(composeResol_ * 1e6 / maxArea));
+        else
+            composeScale_ = 1.;
+    }
+    assert(registScale_ > 0. && registScale_ <= 1.);
+    assert(seamScale_ > 0. && seamScale_ <= 1.);
+    assert(composeScale_ > 0. && composeScale_ <= 1.);
 
     Status status;
     if ((status = matchImages()) != OK) {
@@ -158,7 +207,7 @@ ImageStitcher::Status ImageStitcher::estimateTransform(InputArrayOfArrays images
 
 ImageStitcher::Status ImageStitcher::composePanorama(OutputArray pano)
 {
-#define ENABLE_DEBUG_COMPOSE    1
+#define ENABLE_DEBUG_COMPOSE 1
 
     assert((int)numImgs_ >= 2);
     assert(indices_.size() >= 2);
@@ -192,9 +241,12 @@ ImageStitcher::Status ImageStitcher::composePanorama(OutputArray pano)
                                              BORDER_REFLECT, warpedImages[i]);
             warpedSizes[i] = warpedImages[i].size();
 
-            //? FIXME 为何这里不需要从input mask里面warp?
-            seamEstMask.create(seamEstImg.size(), CV_8UC1);
-            seamEstMask.setTo(255);
+            if (emptyInputMask_) {
+                seamEstMask.create(seamEstImg.size(), CV_8UC1);
+                seamEstMask.setTo(255);
+            } else {
+                resize(inputMasks_[i], seamEstMask, Size(), seamScale_, seamScale_, INTER_NEAREST);
+            }
             warper_->warp(seamEstMask, K, cameras_[i].R, INTER_NEAREST, BORDER_CONSTANT, warpedMasks[i]);
         }
 
@@ -224,14 +276,13 @@ ImageStitcher::Status ImageStitcher::composePanorama(OutputArray pano)
         }
 #endif
 
-        if (drawSeamOnOutput_) {
+        MS_DEBUG_TO_DELETE if (drawSeamOnOutput_) {
             for (size_t i = 0; i < numImgs_; ++i) {
                 vector<vector<Point>> contours;
                 findContours(warpedMasks[i], contours, RETR_EXTERNAL, CHAIN_APPROX_NONE);
                 contours_.push_back(contours);
             }
         }
-
     }
     destroyAllWindows();
     warpedImages.clear();
@@ -284,7 +335,7 @@ ImageStitcher::Status ImageStitcher::composePanorama(OutputArray pano)
         else
             img = full_img;
 
-        if (drawSeamOnOutput_) {
+        MS_DEBUG_TO_DELETE if (drawSeamOnOutput_) {
             vector<vector<Point>> contours = contours_[imgIdx];
             for (size_t m = 0; m < contours.size(); ++m) {
                 for (size_t n = 0; n < contours[m].size(); ++n) {
@@ -292,7 +343,7 @@ ImageStitcher::Status ImageStitcher::composePanorama(OutputArray pano)
                     contours[m][n].y /= seamScale_;
                 }
             }
-            drawContours(img, contours, -1, Scalar(0,0,255), 3);
+            drawContours(img, contours, -1, Scalar(0, 0, 255), 3);
         }
 
         Mat K;
@@ -311,8 +362,12 @@ ImageStitcher::Status ImageStitcher::composePanorama(OutputArray pano)
 #endif
 
         // Warp the current image mask
-        mask.create(img.size(), CV_8U);
-        mask.setTo(Scalar::all(255));
+        if (emptyInputMask_) {
+            mask.create(img.size(), CV_8UC1);
+            mask.setTo(255);
+        } else {
+            resize(inputMasks_[imgIdx], mask, Size(), composeScale_, composeScale_, INTER_NEAREST);
+        }
         warper_->warp(mask, K, cameras_[imgIdx].R, INTER_NEAREST, BORDER_CONSTANT, mask_warped);
 
         // 如果做过缝合线优化, 则保留缝合线附近的mask(warpedMasks[imgIdx])
@@ -370,46 +425,24 @@ ImageStitcher::Status ImageStitcher::matchImages()
     featureExtImgs.resize(numImgs_);
     featureExtMasks.resize(numImgs_);
 
-    // 先确定一下缩放比例, 用最大图像的分辨率确定
-    if (determinScaleByResol_) {
-        double maxArea = 0;
-        for (size_t i = 0; i < numImgs_; ++i)
-            maxArea = inputImages_[i].size().area() > maxArea ? inputImages_[i].size().area() : maxArea;
-
-        if (registResol_ > 0)
-            registScale_ = std::min(1.0, std::sqrt(registResol_ * 1e6 / maxArea));
-        else
-            registScale_ = 1.;
-
-        if (seamScale_ > 0)
-            seamScale_ = std::min(1.0, std::sqrt(seamResol_ * 1e6 / maxArea));
-        else
-            seamScale_ = 1.;
-
-        if (composeResol_ > 0)
-            composeScale_ = std::min(1.0, std::sqrt(composeResol_ * 1e6 / maxArea));
-        else
-            composeScale_ = 1.;
-    }
-
     // 1.缩小图像, 提取特征点
     for (size_t i = 0; i < numImgs_; ++i) {
         inputImgSize_[i] = inputImages_[i].size();
 
         resize(inputImages_[i], featureExtImgs[i], Size(), registScale_, registScale_, INTER_LINEAR_EXACT);
-        if (!inputMasks_.empty()) {
+        if (!emptyInputMask_) {
             resize(inputMasks_[i], featureExtMasks[i], Size(), registScale_, registScale_, INTER_NEAREST);
-            ms::detail::computeImageFeatures(featureFinder_, featureExtImgs[i], features_[i],
+            cv::detail::computeImageFeatures(featureFinder_, featureExtImgs[i], features_[i],
                                              featureExtMasks[i]);
         } else {
-            ms::detail::computeImageFeatures(featureFinder_, featureExtImgs[i], features_[i]);
+            cv::detail::computeImageFeatures(featureFinder_, featureExtImgs[i], features_[i]);
         }
 
         features_[i].img_idx = (int)i;
         INFO("Features in image #" << i << ": " << features_[i].keypoints.size());
 
-//        if (i != baseIndex_)
-//            computeHomography(inputImages_[baseIndex_], inputImages_[i], Homs[i]);  // Hib
+        // if (i != baseIndex_)
+        //    computeHomography(inputImages_[baseIndex_], inputImages_[i], Homs[i]);  // Hib
     }
 
 
@@ -469,7 +502,7 @@ ImageStitcher::Status ImageStitcher::estimateCameraParams()
     // Find median focal length and use it as final image scale
     vector<double> focals;
     for (size_t i = 0; i < cameras_.size(); ++i) {
-        //INFO("Camera intrinsic #" << indices_[i] << ":\n" << cameras_[i].K());
+        // INFO("Camera intrinsic #" << indices_[i] << ":\n" << cameras_[i].K());
         focals.push_back(cameras_[i].focal);
     }
 
@@ -516,7 +549,7 @@ ImageStitcher::Status ImageStitcher::getWarpedImages(OutputArrayOfArrays _imgs, 
 
     const float detect_work_aspect = static_cast<float>(scale / registScale_);
     warper_->setScale(static_cast<float>(warpedImageScale_ * detect_work_aspect));
-    INFO("input detect scale is " << scale << ", and detect_work_aspect will be " << detect_work_aspect);
+    ATTENTION("Detect scale is " << scale << ", and detect_work_aspect will be " << detect_work_aspect);
 
     UMat img, warpedMask;
     std::vector<ms::detail::CameraParams> cameras_detectScale(cameras_);
@@ -535,7 +568,11 @@ ImageStitcher::Status ImageStitcher::getWarpedImages(OutputArrayOfArrays _imgs, 
         cameras_detectScale[i].K().convertTo(K, CV_32F);
 
         // Warp the current image
-        warpedCorners[i] = warper_->warp(img, K, cameras_[i].R, INTER_LINEAR, BORDER_REFLECT, warpedImages[i]);
+        warpedCorners[i] =
+            warper_->warp(img, K, cameras_[i].R, INTER_LINEAR, BORDER_REFLECT, warpedImages[i]);
+
+        ATTENTION("#" << i << " size original is: " << full_img.size());
+        ATTENTION("#" << i << " scaled size for detection is: " << warpedImages[i].size());
 
         // Warp the current image mask
         UMat mask = UMat(img.size(), CV_8U);
@@ -552,6 +589,228 @@ ImageStitcher::Status ImageStitcher::getWarpedImages(OutputArrayOfArrays _imgs, 
 
     return OK;
 }
+
+void ImageStitcher::setForegrounds(InputArrayOfArrays foreMasks, const vector<Rect>& fores)
+{
+    foreMasks.getUMatVector(foregroundMasks_);
+    foregroundRects_ = fores;
+
+    assert(foregroundMasks_.size() == numImgs_);
+    assert(foregroundRects_.size() == numImgs_);
+}
+
+ImageStitcher::Status ImageStitcher::composePanoWithOverlapped(OutputArray pano)
+{
+    assert(overlappedForegroundRects_.size() == numImgs_);
+
+    return composePanoWithoutOverlapped(pano); //! TODO
+}
+
+ImageStitcher::Status ImageStitcher::composePanoWithoutOverlapped(OutputArray pano)
+{
+#define ENABLE_DEBUG_COMPOSE_WITH_FORE 1
+    MS_DEBUG_TO_DELETE assert(foregroundMasks_.size() == numImgs_);
+    MS_DEBUG_TO_DELETE assert(foregroundRects_.size() == numImgs_);
+
+    // warp 后的图像和掩模, 边界扩到 dst_roi_, 使他们的尺寸相同
+    vector<UMat> warpedImages(numImgs_);
+    vector<UMat> warpedMasks(numImgs_);
+    vector<Point> warpedCorners(numImgs_);
+    vector<Rect> warpedRects(numImgs_);
+
+    ///! TODO 曝光补偿
+    MS_DEBUG_TO_DELETE if (0 && doExposureCompensation_) {
+        INFO("Warping images for exposure compensation... ");
+
+        const float seam_work_aspect = static_cast<float>(seamScale_ / registScale_);
+        INFO("seamScale_ = " << seamScale_ << ", and seam_work_aspect = " << seam_work_aspect);
+
+        warper_->setScale(static_cast<float>(warpedImageScale_ * seam_work_aspect));
+
+        // 在更低的尺度上补偿曝光
+        for (size_t i = 0; i < numImgs_; ++i) {
+            Mat_<float> K;
+            cameras_[i].K().convertTo(K, CV_32F);
+            K(0, 0) *= seam_work_aspect;
+            K(0, 2) *= seam_work_aspect;
+            K(1, 1) *= seam_work_aspect;
+            K(1, 2) *= seam_work_aspect;
+
+            UMat seamEstImg, seamEstMask;
+            resize(inputImages_[i], seamEstImg, Size(), seamScale_, seamScale_, INTER_LINEAR_EXACT);
+            warpedCorners[i] = warper_->warp(seamEstImg, K, cameras_[i].R, INTER_LINEAR,
+                                             BORDER_REFLECT, warpedImages[i]);
+
+            if (emptyInputMask_) {
+                seamEstMask.create(seamEstImg.size(), CV_8UC1);
+                seamEstMask.setTo(255);
+            } else {
+                resize(inputMasks_[i], seamEstMask, Size(), seamScale_, seamScale_, INTER_NEAREST);
+            }
+            warper_->warp(seamEstMask, K, cameras_[i].R, INTER_NEAREST, BORDER_CONSTANT, warpedMasks[i]);
+        }
+
+        exposureCompensator_->feed(warpedCorners, warpedImages, warpedMasks);
+        for (size_t i = 0; i < numImgs_; ++i)
+            exposureCompensator_->apply(int(i), warpedCorners[i], warpedImages[i], warpedMasks[i]);
+    }
+
+    /// 图像合成
+    INFO(endl << "Compositing...");
+
+    const float compose_work_aspect = static_cast<float>(composeScale_ / registScale_);
+    warper_->setScale(static_cast<float>(warpedImageScale_ * compose_work_aspect));
+    INFO("composeScale_ = " << composeScale_ << ", and compose_work_aspect = " << compose_work_aspect);
+
+    // 计算pano尺寸, 并扩充各图像边界
+    vector<Size> warpedSizes(numImgs_);
+    std::vector<ms::detail::CameraParams> cameras_ComposeScale(cameras_);
+    for (size_t i = 0; i < numImgs_; ++i) {
+        // Update intrinsics
+        cameras_ComposeScale[i].ppx *= compose_work_aspect;
+        cameras_ComposeScale[i].ppy *= compose_work_aspect;
+        cameras_ComposeScale[i].focal *= compose_work_aspect;
+
+        // Update corner and size
+        Size sz = inputImgSize_[i];
+        if (std::abs(composeScale_ - 1) > 1e-1) {
+            sz.width = cvRound(inputImgSize_[i].width * composeScale_);
+            sz.height = cvRound(inputImgSize_[i].height * composeScale_);
+        }
+
+        Mat K;
+        cameras_ComposeScale[i].K().convertTo(K, CV_32F);
+
+        // warp后的图像在pano上的roi
+        const Rect roi = warper_->warpRoi(sz, K, cameras_ComposeScale[i].R);
+        warpedCorners[i] = roi.tl();
+        warpedSizes[i] = roi.size();
+    }
+    const Rect dstROI = ResultRoi(warpedCorners, warpedSizes);
+
+    blender_->prepare(warpedCorners, warpedSizes);
+
+    // 1.获得合成尺度上的图像和掩模
+    UMat img, mask;  // tmp var
+    for (size_t j = 0, iend = indices_.size(); j < iend; ++j) {
+        const size_t imgIdx = indices_[j];
+        INFO("Compositing image #" << imgIdx);
+
+        Mat K;
+        cameras_ComposeScale[imgIdx].K().convertTo(K, CV_32F);
+
+        UMat& full_img = inputImages_[imgIdx];
+        if (std::abs(composeScale_ - 1) > 1e-1) {
+            resize(full_img, img, Size(), composeScale_, composeScale_, INTER_LINEAR_EXACT);
+            foregroundRects_[imgIdx].x *= composeScale_;
+            foregroundRects_[imgIdx].y *= composeScale_;
+            foregroundRects_[imgIdx].width *= composeScale_;
+            foregroundRects_[imgIdx].height *= composeScale_;
+            MS_DEBUG_TO_DELETE WARNING("目前这里不会执行!");
+        } else {
+            img = full_img;
+        }
+        Point p = warper_->warp(img, K, cameras_[imgIdx].R, INTER_LINEAR, BORDER_REFLECT, warpedImages[imgIdx]);
+        assert(p.x == warpedCorners[imgIdx].x && p.y == warpedCorners[imgIdx].y);
+
+        const Size s = warpedImages[imgIdx].size();
+        copyMakeBorder(warpedImages[imgIdx], warpedImages[imgIdx], p.y - dstROI.y,
+                       dstROI.height - p.y - s.height, p.x - dstROI.x, dstROI.width - p.x - s.width, BORDER_ISOLATED);
+
+        //! 因为掩模是由warp后的图像resize回来的, 所以和原图尺寸几乎不相等
+        //! TODO 要从 detect scale 直接 resize 回 comp scale.
+        ATTENTION("#" << imgIdx << " size of comp warped image is: " << s);
+        ATTENTION("#" << imgIdx << " size of comp warped image with border is: " << warpedImages[imgIdx].size());
+
+        if (emptyInputMask_) {
+            mask.create(img.size(), CV_8UC1);
+            mask.setTo(255);
+        } else {
+            resize(inputMasks_[imgIdx], mask, Size(), composeScale_, composeScale_, INTER_NEAREST);
+        }
+        warper_->warp(mask, K, cameras_[imgIdx].R, INTER_NEAREST, BORDER_CONSTANT, warpedMasks[imgIdx]);
+        copyMakeBorder(warpedMasks[imgIdx], warpedMasks[imgIdx], p.y - dstROI.y,
+                       dstROI.height - p.y - s.height, p.x - dstROI.x, dstROI.width - p.x - s.width, BORDER_ISOLATED);
+
+        ATTENTION("#" << imgIdx << " fore rect before warping is: " << foregroundRects_[imgIdx]);
+        warpedRects[imgIdx] = foregroundRects_[imgIdx]; // 换到基准帧坐标系下
+        warpedRects[imgIdx].x += warpedCorners[imgIdx].x - warpedCorners[baseIndex_].x;
+        warpedRects[imgIdx].y += warpedCorners[imgIdx].y - warpedCorners[baseIndex_].y;
+        ATTENTION("#" << imgIdx << " fore rect after warping is: " << warpedRects[imgIdx]);
+
+        warpedCorners[imgIdx] = Point(0, 0);
+        warpedSizes[imgIdx] = s;
+    }
+    img.release();
+    mask.release();
+    blender_->prepare(warpedCorners, warpedSizes);
+
+    // 2. 曝光补偿, 确定前景的mask区域
+//    if (doExposureCompensation_)
+//        exposureCompensator_->feed(warpedCorners, warpedImages, warpedMasks);
+
+    for (size_t j = 0, iend = indices_.size(); j < iend; ++j) {
+        const size_t imgIdx = indices_[j];
+//        exposureCompensator_->apply((int)imgIdx, warpedCorners[imgIdx], warpedImages[imgIdx], warpedMasks[imgIdx]);
+
+        if (imgIdx != baseIndex_) {
+            // 非基准帧只留取前景区域的掩模
+            UMat foreMask = UMat::zeros(warpedMasks[imgIdx].size(), CV_8UC1);
+            foreMask(foregroundRects_[imgIdx]).setTo(255);
+            bitwise_and(warpedMasks[imgIdx], foreMask, warpedMasks[imgIdx]);
+            SmoothMaskWeightEdge(warpedMasks[imgIdx], warpedMasks[imgIdx], 10, 0);
+            // 基准帧对应此区域掩模清空. 注意rect的相对坐标系!
+
+
+            UMat maskToDelete;
+            //dilate(foreMask, maskToDelete, Mat(), Point(-1,-1), 3);
+            erode(foreMask, maskToDelete, Mat(), Point(-1,-1), 10);
+            UMat weight;
+            distanceTransform(foreMask, weight, DIST_C, 3); // CV_32F
+            bitwise_not(weight, weight);
+            weight.setTo(0.f, maskToDelete);
+            normalize(weight, weight, 0, 1, NORM_MINMAX);
+            weight.convertTo(weight, CV_8U, 255);
+
+            warpedMasks[baseIndex_](warpedRects[imgIdx]).setTo(0);
+            //subtract(warpedMasks[baseIndex_], warpedMasks[imgIdx], warpedMasks[baseIndex_]); // 尺寸不一样,不能直接相减
+
+#if DEBUG && ENABLE_DEBUG_COMPOSE_WITH_FORE
+            NamedLargeWindow("当前帧最终掩模");
+            imshow("当前帧最终掩模", warpedMasks[imgIdx]);
+
+            UMat fore_tmp = warpedImages[imgIdx].clone();
+            rectangle(fore_tmp, foregroundRects_[imgIdx], Scalar(0,255,0), 2);
+            NamedLargeWindow("当前帧最终掩模区域");
+            imshow("当前帧最终掩模区域", fore_tmp);
+
+            NamedLargeWindow("基准帧当前掩模区域");
+            imshow("基准帧当前掩模区域", warpedMasks[baseIndex_]);
+            waitKey(300);
+#endif
+        }
+    }
+    MS_DEBUG_TO_DELETE destroyAllWindows();
+
+    // 3.blender feed
+    for (size_t j = 0, iend = indices_.size(); j < iend; ++j) {
+        const size_t imgIdx = indices_[j];
+
+        UMat img_s;
+        warpedImages[imgIdx].convertTo(img_s, CV_16S);
+        blender_->feed(img_s, warpedMasks[imgIdx], warpedCorners[imgIdx]);
+    }
+
+    // 4. blend
+    UMat result, resultMask;
+    blender_->blend(result, resultMask);
+    result.convertTo(pano, CV_8U);
+
+    if (result.empty())
+        return ERR_STITCH_FAIL;
+    return OK;
+}
+
 
 ImageStitcher::Status ImageStitcher::computeHomography(InputArray img1, InputArray img2, OutputArray H)
 {
@@ -629,165 +888,5 @@ ImageStitcher::Status ImageStitcher::computeHomography(InputArray img1, InputArr
 
     return OK;
 }
-
-/*
-WarpedCorners ImageStitcher::getWarpedCorners(const Mat& src, const Mat& H)
-{
-    WarpedCorners corners;
-
-    // 左上角(0,0,1)
-    double v2[] = {0, 0, 1};
-    double v1[3];  // 变换后的坐标值
-    Mat V2 = Mat(3, 1, CV_64FC1, v2);
-    Mat V1 = Mat(3, 1, CV_64FC1, v1);
-
-    V1 = H * V2;
-    corners.tl.x = v1[0] / v1[2];
-    corners.tl.y = v1[1] / v1[2];
-
-    // 左下角(0,src.rows,1)
-    v2[0] = 0;
-    v2[1] = src.rows - 1;
-    V2 = Mat(3, 1, CV_64FC1, v2);
-    V1 = Mat(3, 1, CV_64FC1, v1);
-    V1 = H * V2;
-    corners.bl.x = v1[0] / v1[2];
-    corners.bl.y = v1[1] / v1[2];
-
-    // 右上角(src.cols,0,1)
-    v2[0] = src.cols - 1;
-    v2[1] = 0;
-    V2 = Mat(3, 1, CV_64FC1, v2);
-    V1 = Mat(3, 1, CV_64FC1, v1);
-    V1 = H * V2;
-    corners.tr.x = v1[0] / v1[2];
-    corners.tr.y = v1[1] / v1[2];
-
-    // 右下角(src.cols,src.rows,1)
-    v2[0] = src.cols - 1;
-    v2[1] = src.rows - 1;
-    V2 = Mat(3, 1, CV_64FC1, v2);
-    V1 = Mat(3, 1, CV_64FC1, v1);
-    V1 = H * V2;
-    corners.br.x = v1[0] / v1[2];
-    corners.br.y = v1[1] / v1[2];
-
-    if (corners.tl.x < 0 && corners.bl.x < 0)
-        corners.direction = LEFT;
-    else if (corners.tr.x > src.cols && corners.br.x > src.cols)
-        corners.direction = RIGHT;
-    else
-        corners.direction = UNKNOWN;
-
-    return corners;
-}
-
-void ImageStitcher::alphaBlend(const Mat& img1, const Mat& img2, const WarpedCorners& corners, Mat& pano)
-{
-#define DEBUG_RESULT_BLEND
-
-    //! TODO 相机向左/右移动, 其重叠区域的变换?
-
-    // 相机向右运动
-    int expBorder = 0;  // TODO
-    Point2i tl1_overlapped, br1_overlapped;
-    tl1_overlapped.x = max(0, cvFloor(min(corners.tl.x, corners.bl.x) - expBorder));
-    tl1_overlapped.y = max(0, cvFloor(min(corners.tl.y, corners.tr.y) - expBorder));
-    br1_overlapped.x = min(fullImgSize_.width, cvCeil(max(corners.tr.x, corners.br.x)) + expBorder);
-    br1_overlapped.y = min(fullImgSize_.height, cvCeil(max(corners.bl.y, corners.br.y)) + expBorder);
-    Rect overlappedArea1(tl1_overlapped, br1_overlapped);
-
-//    Point2i tl2_overlapped, br2_overlapped;
-//    if ((corners.tl.x >= img1.cols && corners.bl.x >= img1.cols) || (corners.tr.x <= 0 && corners.br.x <= 0) ||
-//        (corners.tl.y > img1.rows && corners.tr.y > img1.rows) || (corners.bl.y <= 0 && corners.br.y <= 0)) {
-//        ; // TODO
-//    }
-//    tl2_overlapped.x =
-//        min(corners.tl.x, corners.bl.x) < 0 ? 0 : cvFloor(min(corners.tl.x, corners.bl.x) - expBorder);
-//    tl2_overlapped.y =
-//        min(corners.tl.y, corners.tr.y) < 0 ? 0 : cvFloor(min(corners.tl.y, corners.tr.y) - expBorder);
-//    br2_overlapped.x = cvCeil(tl2_overlapped.x + overlappedArea1.width);
-//    br2_overlapped.y = cvCeil(tl2_overlapped.y + overlappedArea1.height);
-//    Rect overlappedArea2(tl2_overlapped, br2_overlapped);
-//    assert(overlappedArea1.area() == overlappedArea2.area());
-
-    //! TODO   distanceTransform
-    Mat img1Gray, img2Gray;
-    Mat mask1, mask2, mask2Dist, panoMask;
-    cvtColor(img1, img1Gray, COLOR_BGR2GRAY);
-    cvtColor(img2, img2Gray, COLOR_BGR2GRAY);
-    compare(img1Gray, 0, mask1, CMP_GT);
-    compare(img2Gray, 0, mask2, CMP_GT);
-    mask2.setTo(255, mask1);
-    imshow("mask1", mask1);
-    imshow("mask2", mask2);
-    distanceTransform(mask2, mask2Dist, DIST_L1, DIST_MASK_3);
-    mask2Dist.convertTo(mask2Dist, CV_8UC1);
-    cout << mask2Dist.type() << endl;
-    imshow("mask2Dist", mask2Dist);
-
-    cvFeatherBlender cvFB;
-    Mat img1S, img2S;
-    img1.convertTo(img1S, CV_16SC3);
-    img2.convertTo(img2S, CV_16SC3);
-    cvFB.prepare(Rect(0,0,img1.cols, img1.rows));
-    cvFB.feed(img1S, mask1, Point(0, 0));
-    cvFB.feed(img2S, mask2, Point(0, 0));
-    cvFB.blend(pano, panoMask);
-    pano.convertTo(pano, CV_8U);
-    imshow("pano", pano);
-
-
-//    compare(img2, 0, mask2, CMP_EQ);
-//    bitwise_and(mask1, mask2, mask);
-//    Mat dw1, dw2, dw;
-//    Mat ig1, ig2;
-//    cvtColor(img1(overlappedArea1), ig1, COLOR_BGR2GRAY);
-//    cvtColor(img2(overlappedArea1), ig2, COLOR_BGR2GRAY);
-//    distanceTransform(ig1, dw1, DIST_L2, DIST_MASK_PRECISE, CV_64FC1);
-//    distanceTransform(ig2, dw2, DIST_L2, DIST_MASK_PRECISE, CV_64FC1);
-//    vconcat(dw1, dw2, dw);
-//    imshow("distanceTransform", dw);
-
-
-//    Mat weight1 = Mat(img2.size(), CV_64FC3, Scalar(1., 1., 1.));
-//    Mat weight2 = Mat(img2.size(), CV_64FC3, Scalar(1., 1., 1.));
-//    for (int c = tl1_overlapped.x, cend = tl1_overlapped.x + overlappedArea1.width; c < cend; ++c) {
-//        const double beta = 1. * (c - tl1_overlapped.x) / overlappedArea1.width;
-//        const double alpha = 1. - beta;
-//        weight1.col(c).setTo(Vec3d(alpha, alpha, alpha));
-//        weight2.col(c).setTo(Vec3d(beta, beta, beta));
-//        // TODO 斜分割线处需要将beta设为0. distanceTransform()
-//    }
-
-#ifdef DEBUG_RESULT_BLEND
-    // show
-//    Mat tmp1, tmp2, tmp3;
-//    tmp1 = img1.clone();
-//    tmp2 = img2.clone();
-//    rectangle(tmp1, overlappedArea1, Scalar(0, 0, 255));
-//    rectangle(tmp2, overlappedArea1, Scalar(0, 0, 255));
-//    vconcat(tmp1, tmp2, tmp3);
-//    imshow("Images & Overlapped area", tmp3);
-
-//    Mat tmp4;
-//    vconcat(weight1, weight2, tmp4);
-//    imshow("Overlapped area weight", tmp4);
-
-    waitKey(0);
-#endif
-
-    // alpha blend
-//    Mat w1, w2;
-//    img1.convertTo(w1, CV_64FC3);
-//    img2.convertTo(w2, CV_64FC3);
-//    w1 = w1.mul(weight1);
-//    w2 = w2.mul(weight2);
-//    pano = Mat::zeros(img2.size(), CV_64FC3);
-//    pano += w1 + w2;
-//    pano.convertTo(pano, CV_8UC3);
-}
-
-*/
 
 }  // namespace ms

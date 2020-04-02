@@ -56,7 +56,18 @@ Mat GuidedFilter(const Mat& src, int radius, double eps);
 // void applyEdgeFilter(Mat& img, int x, int y, int dir);
 void OverlappedEdgesSmoothing(const Mat& src, const Mat& mask, Mat& dst, double scale = 0.5);
 
+/**
+ * @brief 移动/扩大/缩小矩形
+ * @param rec   矩形
+ * @param size  矩形所在的图像尺寸, 主要是为了防止越界
+ * @param a     左上角点要移动的值, 横纵坐标移动量都是a
+ * @param b     右下角点要移动的值, 横纵坐标移动量都是b
+ * @return  返回新的矩形
+ */
 Rect ResizeRectangle(const Rect& rec, const Size& size, int a, int b);
+
+// 对多幅图中值滤波得到没有前景的图片
+void ImagesMedianFilterToOne(InputArrayOfArrays imgs, OutputArray dst);
 
 #ifdef DEBUG
 void NamedLargeWindow(const string& title, bool flag = true);

@@ -1073,6 +1073,56 @@ Rect ResizeRectangle(const Rect& rec, const Size& size, int a, int b)
     return res;
 }
 
+void ImagesMedianFilterToOne(InputArrayOfArrays imgs, OutputArray dst)
+{
+    vector<Mat> images;
+    imgs.getMatVector(images);
+
+    assert(!images.empty());
+    assert(images[0].channels() == 3);
+
+    size_t N = images.size();
+
+    // 得到每副图像的Y域分量
+    vector<Mat> vImgs_Y(N);
+    for (size_t i = 0; i < N; ++i) {
+        Mat imgYUV;
+        vector<Mat> channels;
+        cvtColor(images[i], imgYUV, COLOR_BGR2YUV);
+        split(imgYUV, channels);
+        vImgs_Y[i] = channels[0];
+    }
+
+    // 根据Y域分量进行中值滤波
+    Mat median = Mat::zeros(images[0].size(), CV_8UC3);
+    for (int y = 0; y < images[0].rows; ++y) {
+        Vec3b* imgRow = median.ptr<Vec3b>(y);
+
+        for (int x = 0; x < images[0].cols; ++x) {
+            vector<pair<uchar, uchar>> vLumarAndIndex;
+            for (size_t imgIdx = 0; imgIdx < N; ++imgIdx)
+                vLumarAndIndex.emplace_back(vImgs_Y[imgIdx].at<uchar>(y, x), imgIdx);
+
+            // 根据亮度中值决定此像素的值由哪张图像提供
+            sort(vLumarAndIndex.begin(), vLumarAndIndex.end());
+            uchar idx1, idx2;
+            if (N % 2 == 0) {
+                idx1 = vLumarAndIndex[N / 2 - 1].second;
+                idx2 = vLumarAndIndex[N / 2].second;
+            } else {
+                idx1 = idx2 = vLumarAndIndex[(N - 1) / 2].second;
+            }
+
+            if (idx1 == idx2)
+                imgRow[x] = images[idx1].at<Vec3b>(y, x);
+            else
+                imgRow[x] = 0.5 * (images[idx1].at<Vec3b>(y, x) + images[idx2].at<Vec3b>(y, x));
+        }
+    }
+
+    dst.assign(median);
+}
+
 #if DEBUG
 void NamedLargeWindow(const string& title, bool flag)
 {

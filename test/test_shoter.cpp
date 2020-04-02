@@ -64,6 +64,8 @@ int main(int argc, char* argv[])
 
     MotionShot::Status status = MotionShot::OK;
     Ptr<MotionShot> motionShoter = makePtr<MotionShot>();
+    motionShoter->setDetectScale(0.25);
+    motionShoter->setFlag_UseBaiduAIP(false);
 
     status = motionShoter->setInputs(vImages);
     if (status != MotionShot::OK) {
@@ -79,14 +81,14 @@ int main(int argc, char* argv[])
     timer.stop();
     TIMER(" - Time cost in motion shot: " << timer.getTimeSec() << "s");
 
-//    Mat pano;
-//    motionShoter->getResult(pano);
+    Mat pano;
+    motionShoter->getResult(pano);
 
-//    NamedLargeWindow("Result Pano");
-//    imshow("Result Pano", pano);
-//    imwrite("/home/vance/output/result_pano_shoter.jpg", pano);
-//    INFO("Saving result to /home/vance/output/result_pano_shoter.jpg");
-//    waitKey(0);
+    NamedLargeWindow("Result Pano");
+    imshow("Result Pano", pano);
+    imwrite("/home/vance/output/shoter_result.jpg", pano);
+    INFO("Saving result to /home/vance/output/shoter_result.jpg");
+    waitKey(0);
 
     return 0;
 }

@@ -14,16 +14,6 @@
 namespace ms
 {
 
-// enum ForegroundMovingDirection { LEFT, RIGHT, UNKNOWN };
-
-// struct WarpedCorners {
-//    Point2f tl;
-//    Point2f tr;
-//    Point2f bl;
-//    Point2f br;
-//    ForegroundMovingDirection direction;
-//};
-
 
 class ImageStitcher
 {
@@ -41,6 +31,7 @@ public:
     enum FeatureMatchType { BF = 0, KNN = 1 };
 
     ImageStitcher(FeatureType ft = SURF, FeatureMatchType mt = KNN);
+    ~ImageStitcher();
 
     static Ptr<ImageStitcher> create(FeatureType ft = SURF, FeatureMatchType mt = KNN);
 
@@ -62,30 +53,26 @@ public:
     Status composePanorama(OutputArray pano);
 
     //! 用法2, (变换+前景检测(outside)+合成), 先输出变换结果, 由外部检测前景, 再传入相关数据进行合成
-    void setForegrounds(const vector<Rect>& fores) { foregroundRects_ = fores; }
+    void setForegrounds(InputArrayOfArrays foreMasks, const vector<Rect>& fores);
+    void setOverlappedForegroundRects(const vector<Rect>& recs) { overlappedForegroundRects_ = recs; }
     Status getWarpedImages(OutputArrayOfArrays imgs, OutputArrayOfArrays masks,
                            vector<Point>& corners, double scale = 0.5);
-    Status composePanoramaWithForegrounds(OutputArray pano); //! TODO
-
-    // WarpedCorners getWarpedCorners(const Mat& src, const Mat& H);
-
-    // void alphaBlend(const Mat& img1, const Mat& img2, const WarpedCorners& corners, Mat& pano);
+    Status composePanoWithoutOverlapped(OutputArray pano);
+    Status composePanoWithOverlapped(OutputArray pano);  //! TODO
 
     //! debug functions
-    Status computeHomography(InputArray img1, InputArray img2, OutputArray H12);
-
+    MS_DEBUG_TO_DELETE Status computeHomography(InputArray img1, InputArray img2, OutputArray H12);
     MS_DEBUG_TO_DELETE bool drawSeamOnOutput_;
     MS_DEBUG_TO_DELETE vector<vector<vector<Point>>> contours_;
 
-public:
-    void getBaseFrame(){}    //! TODO
+private:
     Status matchImages();
     Status estimateCameraParams();
 
-    // custom class
     FeatureType featureType_;
     FeatureMatchType featureMatchType_;
 
+    // custom class
     Ptr<cv::Feature2D> featureFinder_;
     // Ptr<cv::DescriptorMatcher> featureMatcher_;
     Ptr<cv::detail::FeaturesMatcher> featureMatcher_;
@@ -110,21 +97,21 @@ public:
     double warpedImageScale_;  // = focus
 
     // data
+    bool emptyInputMask_;
     vector<UMat> inputImages_, inputMasks_;
-    vector<UMat> warpedImages_, warpedMasks_;        // 统一坐标系后的图像
-    vector<Point> warpedCorners_;   // 统一坐标系后图像的左上角坐标
-    vector<Size> inputImgSize_/*, warpedImgSize_*/;
+    vector<Size> inputImgSize_ /*, warpedImgSize_*/;
 
-    size_t numImgs_, baseIndex_;     // 基准帧索引
-    UMat /*baseFrame_,*/ matchingMask_;  // 基准帧, 与基准帧匹配的指导掩模 NxN
-    vector<size_t> indices_;
+    size_t numImgs_;          // 输入图像总数
+    size_t baseIndex_;        // 基准帧索引
+    UMat matchingMask_;       // 与基准帧匹配的指导掩模 NxN
+    vector<size_t> indices_;  // 有效图像索引
 
     vector<cv::detail::ImageFeatures> features_;        // 特征
     vector<cv::detail::MatchesInfo> pairwise_matches_;  // 匹配关系
-    vector<cv::detail::CameraParams> cameras_;          // 相机参数
-    //Mat result_mask_;
+    vector<cv::detail::CameraParams> cameras_;          // (在registration尺度下的)相机参数
 
-    vector<Rect> foregroundRects_;
+    vector<UMat> foregroundMasks_;
+    vector<Rect> foregroundRects_, overlappedForegroundRects_;
 };
 
 }  // namespace ms

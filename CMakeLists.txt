@@ -8,6 +8,7 @@ message("===> CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 
 IF((CMAKE_BUILD_TYPE MATCHES "Debug") OR (CMAKE_BUILD_TYPE MATCHES "DEBUG") OR (CMAKE_BUILD_TYPE MATCHES "debug"))
     ADD_DEFINITIONS(-DDEBUG)
+    set(CHECK_MEMORY_LEAK True)
 ENDIF()
 
 # -march=native 参数不可用, 会使g2o出错.
@@ -16,6 +17,17 @@ if(CMAKE_COMPILER_IS_GNUCXX)
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -Wall -march=native")
 endif()
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wno-deprecated-declarations -Wno-unused-variable")
+
+if (${CHECK_MEMORY_LEAK})
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address  -fno-omit-frame-pointer")
+    message("")
+    message("===> Check Memory Leak: ON")
+    message("")
+else()
+    message("")
+    message("===> Check Memory Leak: OFF")
+    message("")
+endif()
 
 #set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake/")
 
@@ -86,6 +98,14 @@ target_link_libraries(${PROJECT_NAME}
     -lssl -lcrypto -lcurl
 )
 set(LIB_MotionShot ${PROJECT_NAME})
+
+if (${CHECK_MEMORY_LEAK})
+    target_compile_options(${PROJECT_NAME} PUBLIC
+        -std=c++11
+        -fsanitize=address
+        -fno-omit-frame-pointer
+    )
+endif()
 
 add_subdirectory(Thirdparty/aip-cpp-sdk-0.8.5)
 add_subdirectory(src)

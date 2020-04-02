@@ -94,6 +94,8 @@ public:
      */
     virtual void getMiddleResult(InputOutputArray dst, InputOutputArray dst_mask);
 
+    Rect getDstROI() const { return dst_roi_; }
+
     Mat getOverlappedEdges() const { return overlapped_edges_; }
     Mat getOverlappedEdgesMask(int size) const;
 

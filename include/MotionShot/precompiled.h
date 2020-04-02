@@ -38,11 +38,14 @@ using cv::OutputArrayOfArrays;
 using cv::InputOutputArray;
 using cv::InputOutputArrayOfArrays;
 
+
 #define INFO(msg) (std::cout << "[INFO ] " << msg << std::endl)
-#define TIMER(msg) (std::cout << "\033[32m[TIMER] " << msg << "\033[0m" << std::endl)
 #define WARNING(msg) (std::cerr << "\033[33m[WARNI] " << msg << "\033[0m" << std::endl)
 #define ERROR(msg) (std::cerr << "\033[31m[ERROR] " << msg << "\033[0m (in file \"" \
                     << __FILE__ << "\", at line " << __LINE__ << ")" << std::endl)
+#define TIMER(msg) (std::cout << "\033[32m[TIMER] " << msg << "\033[0m" << std::endl)
+#define ATTENTION(msg) (std::cout << "\033[32m[ATTEN] " << msg << "\033[0m" << std::endl)
+
 
 #ifndef MS_ABANDON
 #define MS_ABANDON
