@@ -1,16 +1,16 @@
 #ifndef MOTION_SHOT_H
 #define MOTION_SHOT_H
 
-#include "precompiled.h"
 #include "ImageBlender/cvBlenders.h"
 #include "ImageStitcher/ImageStitcher.h"
 #include "Thirdparty/aip-cpp-sdk-0.8.5/body_analysis.h"
+#include "precompiled.h"
 
 #include <map>
 #include <memory>
 
-#include <opencv2/video.hpp>
 #include <opencv2/bgsegm.hpp>
+#include <opencv2/video.hpp>
 
 namespace ms
 {
@@ -24,17 +24,35 @@ public:
         ERR_HOMOGRAPHY_EST_FAIL = 2,
         ERR_CAMERA_PARAMS_ADJUST_FAIL = 3,
         ERR_FORE_DETECT_FAIL = 4,
-        ERR_BLEND_FAIL = 5,
+        ERR_STITCH_FAIL = 5,
         ERR_BAD_ARGUMENTS = -1
     };
 
     MotionShot();
     ~MotionShot();
 
-    UMat getBaseFrame() const { return baseFrame_.clone(); }
-    vector<Mat> getForeground() const { return foregrounds_; }
     void setStitcher(Ptr<ImageStitcher> stitcher) { stitcher_ = stitcher; }
-    void setBlender(Ptr<cvBlender> blender) { blender_ = blender; }
+    Ptr<ImageStitcher> stitcher() { return stitcher_; }
+    void setForegroundDetector(Ptr<cv::BackgroundSubtractor> detector) { detector_ = detector; }
+    Ptr<cv::BackgroundSubtractor> foregroundDetector() { return detector_; }
+
+    // stitcher params
+    void setFeatureType(int ft) { stitcher_->setFeatureType(ft); }
+    void setBlenderType(int bt) { stitcher_->setBlenderType(bt); }
+    void setRistResolutions(double r1, double r2, double r3 = 0)
+    {
+        stitcher_->setRistResolutions(r1, r2, r3);
+    }
+    void setScales(double s1 = 0.5, double s2 = 0.25, double s3 = 1.)
+    {
+        stitcher_->setScales(s1, s2, s3);
+    }
+
+    void setFlag_BundleAjustment(bool flag) { stitcher_->setBundleAjustment(flag); }
+    void setFlag_WaveCorrection(bool flag) { stitcher_->setWaveCorrection(flag); }
+    void setFlag_SeamOptimization(bool flag) { stitcher_->setSeamOptimization(flag); }
+    void setFlag_ExposureCompensation(bool flag) { stitcher_->setExposureCompensation(flag); }
+
     void setFlag_UseBaiduAIP(bool flag) { useBaiduAIP_ = flag; }
     void setDetectScale(double scale) { detectScale_ = scale; }
 
@@ -73,8 +91,6 @@ public:
 private:
     /** 统一warp后的图像和掩模的大小 */
     void makeBorderForWarpedImages();
-    void prepare(const vector<Point>& corners, const vector<Size>& sizes);
-    void prepare(Rect dst_roi);
 
     /** 对GMM得到的前景掩模进行形态学操作, 得到粗糙的前景掩模 */
     void foreMaskFilter(InputArray src, OutputArray dst, Rect& foreRect);
@@ -83,10 +99,6 @@ private:
     int countOverlappedRects(const vector<Rect>& rects, vector<Rect>& overlapRects);
     bool isOverlapped(Rect rec1, Rect rec2, Rect& overlap);
 
-    /** 前景有/无重叠时两种合成方式 */
-    Status composeWithOverlapped(OutputArray pano);
-    Status composeWithoutOverlapped(OutputArray pano);
-
     // baidu aip
     bool useBaiduAIP_;
     std::unique_ptr<aip::Bodyanalysis> bodyAnalyst_;
@@ -94,32 +106,26 @@ private:
 
     // custom class
     Ptr<ImageStitcher> stitcher_;
-    Ptr<cvBlender> blender_;
     Ptr<cv::BackgroundSubtractor> detector_;
 
     double detectScale_;
+    size_t numImgs_, bfi_;  // base frame index
 
     // images
     vector<UMat> inputImages_, inputMasks_;
-//    vector<Mat> scaledImages_, scaledMasks_;
-    vector<UMat> warpedImages_, warpedMasks_;
-    vector<Point> corners_/*, scaledCorners_*/;
-    vector<Size> inputSizes_, warpedSize_, scaledSize_/*, scaledWarpedSize_*/;
-    vector<vector<int>> imgBorders_;
-
-    vector<Rect> foregroundRectsRough_, foregroundRectsRefine_;
-    vector<Rect> overlappedForegroundRects_;
-    vector<Mat> foregrounds_, foregroundMasksRough_, foregroundMasksRefine_;
-    vector<Mat> homograpies_;
-
-
-    UMat baseFrame_, baseFrameMask_, pano_;
-
-    size_t numImgs_, bfi_;  // base frame index
+    vector<Size> inputSizes_;
     vector<size_t> indices_;
 
-    MS_DEBUG_TO_DELETE UMat dstImg_, dstMask_;
-    MS_DEBUG_TO_DELETE Rect dstROI_;   // 统一的尺寸
+    vector<UMat> warpedImages_, warpedMasks_;  // get from stitcher
+    vector<Point> corners_;                    // get from stitcher
+
+    // fore detection
+    vector<Rect> foregroundRectsRough_, foregroundRectsRefine_;
+    vector<Rect> overlappedForegroundRects_;
+    vector<Mat> foregroundMasksRough_, foregroundMasksRefine_;
+    vector<Mat> homograpies_;
+
+    UMat pano_;
 };
 
 }  // namespace ms

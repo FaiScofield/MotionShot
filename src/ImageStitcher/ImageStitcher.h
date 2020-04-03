@@ -23,23 +23,31 @@ public:
         ERR_NEED_MORE_IMGS = 1,
         ERR_HOMOGRAPHY_EST_FAIL = 2,
         ERR_CAMERA_PARAMS_ADJUST_FAIL = 3,
-        ERR_STITCH_FAIL = 4
+        ERR_FORE_DETECT_FAIL = 4,
+        ERR_STITCH_FAIL = 5,
+        ERR_BAD_ARGUMENTS = -1
     };
 
     enum FeatureType { ORB = 0, AKAZE = 1, SURF = 2 };
 
     enum FeatureMatchType { BF = 0, KNN = 1 };
 
-    ImageStitcher(FeatureType ft = SURF, FeatureMatchType mt = KNN);
+    ImageStitcher(int ft = SURF, int bt = KNN);
     ~ImageStitcher();
 
-    static Ptr<ImageStitcher> create(FeatureType ft = SURF, FeatureMatchType mt = KNN);
+    static Ptr<ImageStitcher> create(int ft = SURF, int mt = KNN);
 
-    void setFeatureType(int ft) { featureType_ = (FeatureType)ft; }
-    void setFeatureMatchMethod(int fmm) { featureMatchType_ = (FeatureMatchType)fmm; }
+    MS_DEBUG_TO_DELETE void setFeatureMatchMethod(int fmm)
+    {
+        featureMatchType_ = (FeatureMatchType)fmm;
+    }
+    void setFeatureType(int ft);
+    void setBlenderType(int bt);
+
     void setBundleAjustment(bool flag) { doBundleAjustment_ = flag; }
     void setWaveCorrection(bool flag) { doWaveCorrection_ = flag; }
     void setSeamOptimization(bool flag) { doSeamOptimization_ = flag; }
+    void setExposureCompensation(bool flag) { doExposureCompensation_ = flag; }
 
     void setRistResolutions(double r1, double r2, double r3 = 0);
     void setScales(double s1 = 0.5, double s2 = 0.25, double s3 = 1.);
@@ -47,16 +55,19 @@ public:
     //! 原始用法, 拼接图像(变换+合成)
     Status stitch(InputArrayOfArrays images, OutputArray pano);
     Status stitch(InputArrayOfArrays images, InputArrayOfArrays masks, OutputArray pano);
-    // 变换
     Status estimateTransform(InputArrayOfArrays images, InputArrayOfArrays masks = cv::noArray());
-    // 合成
     Status composePanorama(OutputArray pano);
 
     //! 用法2, (变换+前景检测(outside)+合成), 先输出变换结果, 由外部检测前景, 再传入相关数据进行合成
     void setForegrounds(InputArrayOfArrays foreMasks, const vector<Rect>& fores);
-    void setOverlappedForegroundRects(const vector<Rect>& recs) { overlappedForegroundRects_ = recs; }
+    void setOverlappedForegroundRects(const vector<Rect>& recs)
+    {
+        overlappedForegroundRects_ = recs;
+    }
     Status getWarpedImages(OutputArrayOfArrays imgs, OutputArrayOfArrays masks,
-                           vector<Point>& corners, double scale = 0.5);
+                           vector<Point>& corners, double scale = 0.25);
+    void updateHomographies() {} //! TODO 去掉前景附近的内点, 优化H
+
     Status composePanoWithoutOverlapped(OutputArray pano);
     Status composePanoWithOverlapped(OutputArray pano);  //! TODO
 
@@ -71,12 +82,13 @@ private:
 
     FeatureType featureType_;
     FeatureMatchType featureMatchType_;
+    cvBlender::BlenderType blenderType_;
 
     // custom class
     Ptr<cv::Feature2D> featureFinder_;
     // Ptr<cv::DescriptorMatcher> featureMatcher_;
     Ptr<cv::detail::FeaturesMatcher> featureMatcher_;
-    Ptr<cv::detail::Estimator> motionEstimator_;
+    Ptr<cv::detail::Estimator> cameraEstimator_;
     Ptr<cv::detail::BundleAdjusterBase> bundleAdjuster_;
     Ptr<cv::detail::ExposureCompensator> exposureCompensator_;
     Ptr<cv::detail::SeamFinder> seamFinder_;
@@ -88,7 +100,6 @@ private:
     bool doWaveCorrection_;
     bool doExposureCompensation_;
     bool doSeamOptimization_;  //! TODO 曝光补偿和缝合线优化暂时是同时进行的
-    bool doSeamlessBlending_;
 
     // params & threshold
     bool determinScaleByResol_;
@@ -101,10 +112,10 @@ private:
     vector<UMat> inputImages_, inputMasks_;
     vector<Size> inputImgSize_ /*, warpedImgSize_*/;
 
-    size_t numImgs_;          // 输入图像总数
-    size_t baseIndex_;        // 基准帧索引
-    UMat matchingMask_;       // 与基准帧匹配的指导掩模 NxN
-    vector<size_t> indices_;  // 有效图像索引
+    size_t numImgs_, validImgs_;  // 输入/有效图像总数
+    size_t baseIndex_;            // 基准帧索引
+    UMat matchingMask_;           // 与基准帧匹配的指导掩模 NxN
+    vector<size_t> indices_;      // 有效图像索引
 
     vector<cv::detail::ImageFeatures> features_;        // 特征
     vector<cv::detail::MatchesInfo> pairwise_matches_;  // 匹配关系

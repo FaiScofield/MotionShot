@@ -44,7 +44,7 @@ void ExtractImagesToStitch(const vector<Mat>& vImages, vector<Mat>& vImagesToPro
 Rect ResultRoi(const vector<Point>& corners, const vector<Size>& sizes);
 Rect ResultRoi(const vector<Point>& corners, const vector<UMat>& images);
 
-void SmoothMaskWeightEdge(const Mat& src, Mat& dst, int b1, int b2 = 0);
+void SmoothMaskWeightEdge(InputArray src, OutputArray dst, int b1, int b2 = 0);
 
 // 双线性插值
 float GetPixelValue(const Mat& img, float x, float y);
@@ -69,9 +69,9 @@ Rect ResizeRectangle(const Rect& rec, const Size& size, int a, int b);
 // 对多幅图中值滤波得到没有前景的图片
 void ImagesMedianFilterToOne(InputArrayOfArrays imgs, OutputArray dst);
 
-#ifdef DEBUG
 void NamedLargeWindow(const string& title, bool flag = true);
 
+#ifdef DEBUG
 void FlowToColor(const Mat& flow, Mat& color);
 void ShowFlow(const Mat& flow, Mat& color);
 

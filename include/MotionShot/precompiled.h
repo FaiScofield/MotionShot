@@ -44,12 +44,15 @@ using cv::InputOutputArrayOfArrays;
 #define ERROR(msg) (std::cerr << "\033[31m[ERROR] " << msg << "\033[0m (in file \"" \
                     << __FILE__ << "\", at line " << __LINE__ << ")" << std::endl)
 #define TIMER(msg) (std::cout << "\033[32m[TIMER] " << msg << "\033[0m" << std::endl)
-#define ATTENTION(msg) (std::cout << "\033[32m[ATTEN] " << msg << "\033[0m" << std::endl)
+#define ATTENTION(msg) (std::cout << "\033[35m[ATTEN] " << msg << "\033[0m" << std::endl)
 
 
 #ifndef MS_ABANDON
 #define MS_ABANDON
 #define MS_DEBUG_TO_DELETE MS_ABANDON
 #endif
+
+MS_DEBUG_TO_DELETE
+#include <opencv2/highgui.hpp>
 
 #endif // PRECOMPILED_H

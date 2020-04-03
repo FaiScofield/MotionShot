@@ -8,6 +8,8 @@
 #include <curl/curl.h>
 #include <jsoncpp/json/json.h>
 
+#define ENABLE_TIMER 1
+
 namespace ms
 {
 
@@ -16,13 +18,12 @@ using namespace cv;
 
 MotionShot::MotionShot()
 {
-    detectScale_ = 1.0;
+    detectScale_ = 0.25;
 
     stitcher_ = ImageStitcher::create(ImageStitcher::ORB, ImageStitcher::BF);
-    stitcher_->setScales(0.25, 0.1, 1.);
-    blender_ = cvBlender::createDefault(cvBlender::FEATHER);
+    stitcher_->setRistResolutions(1.0, 0.25, 0);    // [M pixel]
     detector_ = cv::createBackgroundSubtractorMOG2(20, 12, false);
-    //    detector_ = cv::bgsegm::createBackgroundSubtractorGMG();
+    // detector_ = cv::bgsegm::createBackgroundSubtractorGMG();
 
     // for NN-based body segmentation
     useBaiduAIP_ = false;
@@ -38,7 +39,6 @@ MotionShot::~MotionShot()
 {
     bodyAnalyst_.release();
     stitcher_.release();
-    blender_.release();
     detector_.release();
 }
 
@@ -107,6 +107,7 @@ MotionShot::Status MotionShot::getWarpedImagsFromStitcher(double scale)
         return (Status)status;
     }
 
+    // 统一每帧图像的分辨率
     makeBorderForWarpedImages();
 
     return OK;
@@ -115,17 +116,23 @@ MotionShot::Status MotionShot::getWarpedImagsFromStitcher(double scale)
 MotionShot::Status MotionShot::detectorForeground()
 {
 #define ENBALE_DEBUG_DETECTION 0
+
+#if ENABLE_TIMER
+    int64 t = getTickCount();
     INFO(endl << "\t Detecing foreground...");
+#endif
 
     Status status = OK;
 
-    // 把所有输入图像做一个中值滤波, 获得一个没有前景的背景
-    Mat medianPano(dstROI_.size(), CV_8UC3);
+    // 把所有输入图像做一个中值滤波, 获得一个没有前景的背景. (图像尺寸已经统一)
+    const Size imgSize = warpedImages_[0].size();
+
+    Mat medianPano(imgSize, CV_8UC3);
     ImagesMedianFilterToOne(warpedImages_, medianPano);
-    imwrite("/home/vance/output/medianPano.jpg", medianPano);
+    MS_DEBUG_TO_DELETE imwrite("/home/vance/output/medianPano.jpg", medianPano);
 
     // 计算所有图像的共同重叠区域, 得到最大内接矩形
-    Mat overlapedMask(dstROI_.size(), CV_8UC1);
+    Mat overlapedMask(imgSize, CV_8UC1);
     overlapedMask.setTo(255);
     for (size_t i = 0; i < numImgs_; ++i) {
         const Mat mask = warpedMasks_[i].getMat(ACCESS_READ);
@@ -140,9 +147,10 @@ MotionShot::Status MotionShot::detectorForeground()
 #endif
 
     // 前景检测
-    Mat rawForeMask, foreMask;
+    Mat rawForeMask, foreMask;  // maxRect区域内的前景掩模
     detector_->apply(medianPano(maxRect), rawForeMask, 0);
 
+    const int rectExpandWidth = 40 * detectScale_;
     foregroundMasksRough_.resize(numImgs_);
     foregroundMasksRefine_.resize(numImgs_);
     foregroundRectsRough_.resize(numImgs_);
@@ -151,19 +159,19 @@ MotionShot::Status MotionShot::detectorForeground()
         // 得到粗糙的前景掩模
         detector_->apply(warpedImages_[i](maxRect), rawForeMask, 0);
         if (rawForeMask.empty()) {
-            WARNING("Empty raw fore maks!");
+            ERROR("Empty raw fore maks!");
             continue;
         }
 
         // 对前景掩模做形态学滤波, 尽量筛选出正确的前景区域
         Rect foreRect, foreRectRough;
         foreMaskFilter(rawForeMask, foreMask, foreRect);
-        copyMakeBorder(foreMask, foregroundMasksRough_[i], maxRect.y, dstROI_.height - maxRect.br().y,
-                       maxRect.x, dstROI_.width - maxRect.br().x, BORDER_ISOLATED); // 相对pano的mask
+        copyMakeBorder(foreMask, foregroundMasksRough_[i], maxRect.y, imgSize.height - maxRect.br().y,
+                       maxRect.x, imgSize.width - maxRect.br().x, BORDER_CONSTANT); // 相对pano的mask
         foreRect.x += maxRect.x;  // 相对pano的rect
         foreRect.y += maxRect.y;
         foregroundRectsRefine_[i] = foreRect;
-        foreRectRough = ResizeRectangle(foreRect, dstROI_.size(), -20, 20);
+        foreRectRough = ResizeRectangle(foreRect, imgSize, -rectExpandWidth, rectExpandWidth);
         foregroundRectsRough_[i] = foreRectRough;
 
         // 掩模中会残留一些背景, 去掉粗糙前景矩形之外的背景
@@ -197,11 +205,14 @@ MotionShot::Status MotionShot::detectorForeground()
             const Rect& rec = foregroundRectsRough_[i];
             status = detectorForegroundWithNN(warpedImages_[i](rec), foreMaskNN);
             if (status == OK) {
-                copyMakeBorder(foreMaskNN, foregroundMasksRefine_[i], rec.y, dstROI_.height - rec.br().y,
-                               rec.x, dstROI_.width - rec.br().x, BORDER_ISOLATED);
+                copyMakeBorder(foreMaskNN, foregroundMasksRefine_[i], rec.y, imgSize.height - rec.br().y,
+                               rec.x, imgSize.width - rec.br().x, BORDER_CONSTANT);
                 foregroundRectsRefine_[i] = boundingRect(foregroundMasksRefine_[i]);
+                foregroundRectsRough_[i] = ResizeRectangle(foregroundRectsRough_[i], imgSize,
+                                                           -rectExpandWidth, rectExpandWidth);
             } else {
                 WARNING("Cann't detect the foreground body using Baidu AIP for #" << i);
+                foregroundMasksRefine_[i] = foregroundMasksRough_[i].clone();
                 continue;
             }
 #if DEBUG && ENBALE_DEBUG_DETECTION
@@ -215,20 +226,28 @@ MotionShot::Status MotionShot::detectorForeground()
     }
 
     MS_DEBUG_TO_DELETE destroyAllWindows();
+
+#if ENABLE_TIMER
+    TIMER("Detecing foreground, time: " << ((getTickCount() - t) / getTickFrequency()) << " sec");
+#endif
+
     return status;
 }
 
 MotionShot::Status MotionShot::compose(OutputArray pano)
 {
-    INFO(endl << "\t Composing...");
-
+    // 重叠区域是由rough算出来的
     int numOverlapped = countOverlappedRects(foregroundRectsRough_, overlappedForegroundRects_);
     INFO("Number of overlapped foregrounds: " << numOverlapped);
 
-    if (numOverlapped > 0)
-        return composeWithOverlapped(pano);
-    else
-        return composeWithoutOverlapped(pano);
+    // 传回当前尺度上的前景掩模和矩形区域即可
+    stitcher_->setForegrounds(foregroundMasksRough_, foregroundRectsRough_);
+    if (numOverlapped > 0) {
+        stitcher_->setOverlappedForegroundRects(overlappedForegroundRects_);
+        return (Status)stitcher_->composePanoWithOverlapped(pano);
+    } else {
+        return (Status)stitcher_->composePanoWithoutOverlapped(pano);
+    }
 }
 
 MotionShot::Status MotionShot::detectorForegroundWithNN(InputArray _src, OutputArray _dst)
@@ -261,37 +280,34 @@ MotionShot::Status MotionShot::detectorForegroundWithNN(InputArray _src, OutputA
 void MotionShot::makeBorderForWarpedImages()
 {
 #define ENABLE_DEBUG_MAKING_BORDER 0
-    INFO(endl << "\t Making border...");
+
+#if ENABLE_TIMER
+    int64 t = getTickCount();
+    INFO(endl << "\t Making border for warped images...");
+#endif
     assert(!warpedImages_.empty() && !warpedMasks_.empty() && !corners_.empty());
     assert(warpedImages_.size() == numImgs_);
     assert(warpedMasks_.size() == numImgs_);
 
-    vector<Size> warpedSizes(numImgs_);
-    for (size_t i = 0; i < numImgs_; ++i) {
-        warpedSizes[i] = warpedImages_[i].size();
-        assert(warpedImages_[i].size() == warpedMasks_[i].size());
-    }
+    const Rect roi = ResultRoi(corners_, warpedImages_);
+    INFO("(Low resolution) roi size: " << roi.size());
 
-    prepare(corners_, warpedSizes);
-    INFO("(Low resolution)Pano size: " << dstROI_.size());
-    assert(!dstImg_.empty() && !dstMask_.empty());
+    const Point roi_tl = roi.tl();
+    const Point roi_br = roi.br();
 
-    const Point dst_tl = dstROI_.tl();
-    const Point dst_br = dstROI_.br();
-
-    imgBorders_.resize(numImgs_);
     vector<UMat> warpedImgsWithDstSize(numImgs_);
     vector<UMat> warpedMasksWithDstSize(numImgs_);
     for (size_t i = 0; i < numImgs_; ++i) {
+        const Size imgSize = warpedImages_[i].size();
         const Point img_tl = corners_[i];
-        const Point img_br = img_tl + Point(warpedSizes[i].width, warpedSizes[i].height);
-        vector<int> borders{img_tl.y - dst_tl.y, dst_br.y - img_br.y, img_tl.x - dst_tl.x,
-                            dst_br.x - img_br.x};
+        const Point img_br = img_tl + Point(imgSize.width, imgSize.height);
+        vector<int> borders{img_tl.y - roi_tl.y, roi_br.y - img_br.y, img_tl.x - roi_tl.x,
+                            roi_br.x - img_br.x};
         copyMakeBorder(warpedImages_[i], warpedImgsWithDstSize[i], borders[0], borders[1],
-                       borders[2], borders[3], BORDER_ISOLATED);
+                       borders[2], borders[3], BORDER_CONSTANT);
         copyMakeBorder(warpedMasks_[i], warpedMasksWithDstSize[i], borders[0], borders[1],
-                       borders[2], borders[3], BORDER_ISOLATED);
-        imgBorders_[i] = borders;
+                       borders[2], borders[3], BORDER_CONSTANT);
+
         assert(warpedImgsWithDstSize[i].size() == warpedMasksWithDstSize[i].size());
 
 #if DEBUG && ENABLE_DEBUG_MAKING_BORDER
@@ -305,146 +321,10 @@ void MotionShot::makeBorderForWarpedImages()
 
     swap(warpedImgsWithDstSize, warpedImages_);
     swap(warpedMasksWithDstSize, warpedMasks_);
-}
 
-void MotionShot::prepare(const vector<Point>& corners, const vector<Size>& sizes)
-{
-    prepare(ResultRoi(corners, sizes));
-}
-
-void MotionShot::prepare(Rect dst_roi)
-{
-    dstImg_.create(dst_roi.size(), CV_16SC3);
-    dstImg_.setTo(Scalar::all(0));
-    dstMask_.create(dst_roi.size(), CV_8U);
-    dstMask_.setTo(Scalar::all(0));
-    dstROI_ = dst_roi;
-}
-
-MotionShot::Status MotionShot::composeWithoutOverlapped(OutputArray pano)
-{
-#define ENABLE_DEBUG_COMPOSE    1
-    INFO("Composing with independent rects...");
-
-    assert(imgBorders_.size() == numImgs_);
-    assert(foregroundRectsRough_.size() == numImgs_);
-
-    // masks和rects去掉之前添加的border, 返回给stitcher
-    vector<Mat> masksRough(numImgs_);
-    vector<Rect> rectsRough = foregroundRectsRough_;
-
-    const double invScale = 1. / detectScale_;
-    const Size size = dstROI_.size();
-
-    for (size_t i = 0; i < numImgs_; ++i) {
-        const vector<int>& borders = imgBorders_[i];
-        assert(borders.size() == 4);
-        MS_DEBUG_TO_DELETE INFO("#" << i << " borders: " << borders[0] << ", " << borders[1] << ", " << borders[2] << ", " << borders[3]);
-
-        masksRough[i] = foregroundMasksRough_[i].rowRange(borders[0], size.height - borders[1])
-                            .colRange(borders[2], size.width - borders[3]).clone();
-        rectsRough[i].x -= borders[2];
-        rectsRough[i].y -= borders[0];
-
-        ATTENTION("#" << i << " size from sitcher is: " << masksRough[i].size());
-
-        MS_DEBUG_TO_DELETE UMat img = warpedImages_[i].rowRange(borders[0], size.height - borders[1])
-                .colRange(borders[2], size.width - borders[3]).clone();
-        if (std::abs(detectScale_ - 1.) > 1e-2) {
-            resize(masksRough[i], masksRough[i], Size(), invScale, invScale, INTER_NEAREST);
-            MS_DEBUG_TO_DELETE resize(img, img, Size(), invScale, invScale, INTER_LINEAR_EXACT);
-
-            ATTENTION("#" << i << " invScaled size to stitcher is: " << img.size());
-
-            rectsRough[i].x *= invScale;
-            rectsRough[i].y *= invScale;
-            rectsRough[i].width *= invScale;
-            rectsRough[i].height *= invScale;
-        }
-
-#if DEBUG && ENABLE_DEBUG_COMPOSE
-        Rect maskRect = boundingRect(masksRough[i]);
-        rectangle(img, maskRect, Scalar(255,0,0), 2);
-        rectangle(img, rectsRough[i], Scalar(0,255,0), 2);
-        NamedLargeWindow("resize to orginal scale");
-        imshow("resize to orginal scale", img);
-        imwrite("/home/vance/output/#" + to_string(i) + "恢复至原分辨率的前景检测结果.jpg", img);
-        waitKey(200);
+#if ENABLE_TIMER
+    TIMER("Making border, time: " << ((getTickCount() - t) / getTickFrequency()) << " sec");
 #endif
-    }
-
-    // 传回原尺度上的前景掩模和矩形区域
-    stitcher_->setForegrounds(masksRough, rectsRough);
-
-    return (Status)stitcher_->composePanoWithoutOverlapped(pano);
-}
-
-MotionShot::Status MotionShot::composeWithOverlapped(OutputArray pano)
-{
-#define ENABLE_DEBUG_COMPOSE_OVERLAPPED 1
-    INFO("Composing with overlapped rects...");
-
-    assert(imgBorders_.size() == numImgs_);
-    assert(foregroundRectsRough_.size() == numImgs_);
-    assert(overlappedForegroundRects_.size() == numImgs_);
-
-    // masks和rects去掉之前添加的border, 返回给stitcher
-    vector<Mat> masksRough(numImgs_);
-    vector<Rect> rectsRough = foregroundRectsRough_;    //! TODO 先用粗糙的做
-    vector<Rect> rectsOverlapped = overlappedForegroundRects_;
-
-    const double invScale = 1. / detectScale_;
-    const Size size = dstROI_.size();
-
-    for (size_t i = 0; i < numImgs_; ++i) {
-        const vector<int>& borders = imgBorders_[i];
-        assert(borders.size() == 4);
-        MS_DEBUG_TO_DELETE INFO("#" << i << " borders: " << borders[0] << ", " << borders[1] << ", " << borders[2] << ", " << borders[3]);
-
-        masksRough[i] = foregroundMasksRough_[i].rowRange(borders[0], size.height - borders[1])
-                .colRange(borders[2], size.width - borders[3]).clone();
-
-        rectsRough[i].x -= borders[2];
-        rectsRough[i].y -= borders[0];
-        rectsOverlapped[i].x -= borders[2];
-        rectsOverlapped[i].y -= borders[0];
-
-        ATTENTION("#" << i << " size from sitcher is: " << masksRough[i].size());
-        MS_DEBUG_TO_DELETE UMat img = warpedImages_[i].rowRange(borders[0], size.height - borders[1])
-                .colRange(borders[2], size.width - borders[3]).clone();
-        if (std::abs(detectScale_ - 1.) > 1e-2) {
-            resize(masksRough[i], masksRough[i], Size(), invScale, invScale, INTER_NEAREST);
-            MS_DEBUG_TO_DELETE resize(img, img, Size(), invScale, invScale, INTER_LINEAR_EXACT);
-            ATTENTION("#" << i << " invScaled size to stitcher is: " << img.size());
-
-            rectsRough[i].x *= invScale;
-            rectsRough[i].y *= invScale;
-            rectsRough[i].width *= invScale;
-            rectsRough[i].height *= invScale;
-
-            rectsOverlapped[i].x *= invScale;
-            rectsOverlapped[i].y *= invScale;
-            rectsOverlapped[i].width *= invScale;
-            rectsOverlapped[i].height *= invScale;
-        }
-
-#if DEBUG && ENABLE_DEBUG_COMPOSE_OVERLAPPED
-        Rect maskRect = boundingRect(masksRough[i]);
-        rectangle(img, maskRect, Scalar(255,0,0), 2);
-        rectangle(img, rectsRough[i], Scalar(0,255,0), 2);
-        rectangle(img, rectsOverlapped[i], Scalar(0,0,255), 2);
-        NamedLargeWindow("resize to orginal scale");
-        imshow("resize to orginal scale", img);
-        imwrite("/home/vance/output/#" + to_string(i) + "恢复至原分辨率的前景检测结果.jpg", img);
-        waitKey(200);
-#endif
-    }
-
-    // 传回原尺度上的前景掩模和矩形区域
-    stitcher_->setForegrounds(masksRough, rectsRough);
-    stitcher_->setOverlappedForegroundRects(rectsOverlapped);
-
-    return (Status)stitcher_->composePanoWithOverlapped(pano);
 }
 
 void MotionShot::foreMaskFilter(InputArray src, OutputArray dst, Rect& foreRect)
@@ -513,7 +393,7 @@ void MotionShot::foreMaskFilter(InputArray src, OutputArray dst, Rect& foreRect)
 
     if (potentialForeRects.empty())
         foreRect = Rect(Point(), imgSize);
-    else  //! TODO
+    else  //! TODO 可由前景建模确定
         foreRect = potentialForeRects[0];
 }
 

@@ -46,7 +46,7 @@ int main(int argc, char* argv[])
         INFO(" - suffix = " << str_suffix);
         ReadImageSequence(str_folder, str_suffix, vImages, beginIdx, num);
     } else {
-        ERROR("[Error] Unknown input type for " << str_type);
+        ERROR(" - Unknown input type for " << str_type);
         return -1;
     }
     INFO(" - num of input images = " << vImages.size());
@@ -57,15 +57,17 @@ int main(int argc, char* argv[])
     }
 
     /// mainloop
-    INFO(endl << "\t Shoting... This will take a while...");
+    INFO(endl << "\t Shoting... This will take a while..." << endl);
 
     TickMeter timer;
     timer.start();
 
     MotionShot::Status status = MotionShot::OK;
     Ptr<MotionShot> motionShoter = makePtr<MotionShot>();
-    motionShoter->setDetectScale(0.25);
+    motionShoter->setDetectScale(0.2);
     motionShoter->setFlag_UseBaiduAIP(false);
+    motionShoter->setFeatureType(ImageStitcher::AKAZE);
+    motionShoter->setBlenderType(cvBlender::MULTI_BAND);
 
     status = motionShoter->setInputs(vImages);
     if (status != MotionShot::OK) {

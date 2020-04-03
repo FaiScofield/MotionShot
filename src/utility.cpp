@@ -8,6 +8,7 @@
 #include <unordered_map>
 
 #include <opencv2/video/video.hpp>
+#include <opencv2/highgui.hpp>
 
 namespace ms
 {
@@ -448,9 +449,13 @@ Rect ResultRoi(const vector<Point>& corners, const vector<Size>& sizes)
 
 Rect ResultRoi(const vector<Point>& corners, const vector<UMat>& images)
 {
-    vector<Size> sizes(images.size());
-    for (size_t i = 0; i < images.size(); ++i)
+    assert(!images.empty());
+
+    const size_t N = images.size();
+    vector<Size> sizes(N);
+    for (size_t i = 0; i < N; ++i)
         sizes[i] = images[i].size();
+
     return ResultRoi(corners, sizes);
 }
 
@@ -462,14 +467,14 @@ Rect ResultRoi(const vector<Point>& corners, const vector<UMat>& images)
  * @param b1    缩小方向的过渡区域像素大小
  * @param b2    扩大方向的过渡区域像素大小
  */
-void SmoothMaskWeightEdge(const Mat& src, Mat& dst, int b1, int b2)
+void SmoothMaskWeightEdge(InputArray src, OutputArray dst, int b1, int b2)
 {
 #define ENABLE_DEBUG_SMOOTH_MASK 0
 
     assert(src.type() == CV_8UC1);
 
     if (b1 < 2 && b2 < 2) {
-        dst = src.clone();
+        src.copyTo(dst);
         return;
     }
 
@@ -477,7 +482,7 @@ void SmoothMaskWeightEdge(const Mat& src, Mat& dst, int b1, int b2)
     if (b1 >= 2 && b2 < 2) {  // 缩小
         const Mat kernel1 = getStructuringElement(MORPH_ELLIPSE, Size(2 * b1 + 1, 2 * b1 + 1));
         erode(src, noWeightMask, kernel1);  // 先腐蚀得到不要过渡的区域
-        weightArea = src - noWeightMask;    // 得到需要过渡的区域
+        subtract(src, noWeightMask, weightArea);  // 得到需要过渡的区域
         distanceTransform(src, weightDistance, DIST_C, 3);
         weightDistance.convertTo(weightDistance, CV_8UC1);  //! NOTE 32FC1 to 8UC1, 注意不能乘255
         bitwise_and(weightDistance, weightArea, weightAreaValue);  // 得到过渡区域的权重
@@ -486,7 +491,7 @@ void SmoothMaskWeightEdge(const Mat& src, Mat& dst, int b1, int b2)
     } else if (b1 < 2 && b2 >= 2) {  // 扩大
         const Mat kernel2 = getStructuringElement(MORPH_RECT, Size(2 * b2 + 1, 2 * b2 + 1));
         dilate(src, noWeightMask, kernel2);
-        weightArea = noWeightMask - src;
+        subtract(noWeightMask, src, weightArea);
         distanceTransform(noWeightMask, weightDistance, DIST_C, 3);
         weightDistance.convertTo(weightDistance, CV_8UC1);
         bitwise_and(weightDistance, weightArea, weightAreaValue);
@@ -501,7 +506,7 @@ void SmoothMaskWeightEdge(const Mat& src, Mat& dst, int b1, int b2)
         Mat tmp1, tmp2;
         erode(src, tmp1, kernel1);
         dilate(src, tmp2, kernel2);
-        weightArea = tmp2 - tmp1;
+        subtract(tmp2, tmp1, weightArea);
 
 #if DEBUG && ENABLE_DEBUG_SMOOTH_MASK
         imshow("weightArea", weightArea);
@@ -1123,7 +1128,6 @@ void ImagesMedianFilterToOne(InputArrayOfArrays imgs, OutputArray dst)
     dst.assign(median);
 }
 
-#if DEBUG
 void NamedLargeWindow(const string& title, bool flag)
 {
     if (flag) {
@@ -1134,6 +1138,8 @@ void NamedLargeWindow(const string& title, bool flag)
     }
 }
 
+
+#if DEBUG
 void MakeColorWheel(vector<Scalar>& colorwheel)
 {
     int RY = 15;
